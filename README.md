@@ -128,12 +128,15 @@ data/dict/wordnet.db
 ## 数据与许可
 
 - 代码：[MIT](LICENSE)
+- 完整第三方声明：[THIRD_PARTY_LICENSES.md](THIRD_PARTY_LICENSES.md)
 - FSRS：MIT，见 `app/vendor/fsrs/LICENSE`
 - ECDICT：MIT
 - WordNet：Princeton WordNet License
 - CC-CEDICT：CC BY-SA 4.0
+- PySide6 / Qt：LGPL-3.0
+- Python：PSF License
 - 有道 / 柯林斯 / Merriam-Webster：在线接口，遵循各自服务条款
-- 词典数据库不随仓库分发；请自行下载并遵守对应许可证
+- 仓库不包含词典数据库；便携包会附带数据库，并随包附带完整许可证文本
 
 ## 说明
 
