@@ -29,7 +29,26 @@
 | --- | --- |
 | ![复习](docs/screenshots/review.png) | ![快捷搜索](docs/screenshots/quick-search.png) |
 
-## 运行
+## 下载（普通用户）
+
+Windows 10/11 64 位，解压即用，不需要装 Python：
+
+**[下载最新便携版](https://github.com/yuluo-zero/lexi-dictionary/releases/latest)**
+
+解压后双击：
+
+```
+start.cmd
+```
+
+不想看到命令行窗口，双击 `start.vbs`。
+
+- 数据全部在解压目录的 `data/` 里
+- 删除文件夹即卸载
+- 不包含 API Key、个人设置或用户数据
+- 便携包约 193 MB
+
+## 运行（源码）
 
 需要 **Windows 10/11**、**Python 3.12+**。
 
