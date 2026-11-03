@@ -31,27 +31,38 @@
 
 ## 下载（普通用户）
 
-Windows 10/11 64 位，解压即用，不需要装 Python：
+Windows 10/11 64 位，解压即用，不需要装 Python，也不需要管理员权限。
 
-**[下载最新便携版](https://github.com/yuluo-zero/lexi-dictionary/releases/latest)**
+**[下载最新便携版 ZIP](https://github.com/yuluo-zero/lexi-dictionary/releases/latest)**
 
-解压后双击：
+### 便携版使用
 
-```
-start.cmd
-```
+1. 下载 `lexi-dictionary-portable-v1.0.0.zip`（约 193 MB）
+2. 如果 Windows 提示「已阻止此文件」或「来自网络」：
+   - 先右键 ZIP → 属性 → 勾选「解除锁定」→ 再解压
+   - 或解压后在 PowerShell 运行：
+     ```powershell
+     Get-ChildItem -Recurse | Unblock-File
+     ```
+3. 解压到任意固定目录，例如 `D:\划词词典`
+4. 双击 `start.cmd` 启动
+   - 不想看到命令行窗口，双击 `start.vbs`
+   - 如果启动脚本仍被拦截，直接运行：
+     ```powershell
+     runtime\pythonw.exe main.py
+     ```
+5. 数据都在解压目录：
+   ```
+   data/settings.json   设置
+   data/user.db         生词本、历史、FSRS
+   data/dict/           离线词典
+   ```
 
-不想看到命令行窗口，双击 `start.vbs`。
+删除整个文件夹即卸载；换电脑时整个文件夹复制走即可。
 
-> 如果 Windows 提示“已阻止此文件”或“来自网络”，是下载文件的 Mark-of-the-Web 标记，不是病毒。  
-> 先右键 ZIP → 属性 → 勾选「解除锁定」→ 再解压；或解压后在 PowerShell 里运行：  
-> `Get-ChildItem -Recurse | Unblock-File`  
-> 也可以直接运行：`runtime\pythonw.exe main.py`
-
-- 数据全部在解压目录的 `data/` 里
-- 删除文件夹即卸载
+- 不要删除 `runtime/` 和 `data/dict/`
 - 不包含 API Key、个人设置或用户数据
-- 便携包约 193 MB
+- 在线词典需要联网；韦氏 Key 需自己申请并填入设置
 
 ## 运行（源码）
 
