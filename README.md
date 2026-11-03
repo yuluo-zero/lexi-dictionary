@@ -43,6 +43,11 @@ start.cmd
 
 不想看到命令行窗口，双击 `start.vbs`。
 
+> 如果 Windows 提示“已阻止此文件”或“来自网络”，是下载文件的 Mark-of-the-Web 标记，不是病毒。  
+> 先右键 ZIP → 属性 → 勾选「解除锁定」→ 再解压；或解压后在 PowerShell 里运行：  
+> `Get-ChildItem -Recurse | Unblock-File`  
+> 也可以直接运行：`runtime\pythonw.exe main.py`
+
 - 数据全部在解压目录的 `data/` 里
 - 删除文件夹即卸载
 - 不包含 API Key、个人设置或用户数据
