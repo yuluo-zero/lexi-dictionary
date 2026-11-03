@@ -11,6 +11,26 @@ from .lexicon import Lexicon, has_cjk
 
 SENTENCE_PUNCT = re.compile(r"[。！？!?；;…]|\.\s|,\s")
 
+# British/American spelling pairs used only for a second online attempt.
+_SPELLING_PAIRS = (
+    ("isation", "ization"), ("isations", "izations"),
+    ("ising", "izing"), ("ised", "ized"), ("ises", "izes"), ("ise", "ize"),
+    ("ization", "isation"), ("izations", "isations"),
+    ("izing", "ising"), ("ized", "ised"), ("izes", "ises"), ("ize", "ise"),
+)
+
+
+def spelling_variants(text: str) -> list[str]:
+    """Return plausible British/American spelling alternatives."""
+    low = text.lower()
+    out = []
+    for a, b in _SPELLING_PAIRS:
+        if low.endswith(a):
+            alt = text[: -len(a)] + b
+            if alt.lower() != low and alt.lower() not in [x.lower() for x in out]:
+                out.append(alt)
+    return out
+
 
 def classify(text: str) -> str:
     s = text.strip()
@@ -153,17 +173,42 @@ class SearchEngine(QObject):
         out = {"dictionary": None, "youdao": None, "synonyms": [], "translation": None, "merriam": None, "error": ""}
         try:
             if kind == "en" and settings.get("online_dict", True):
-                if settings.get("source_youdao", True):
-                    youdao = online.youdao_lookup(text, full=full)
-                    out["youdao"] = youdao
-                    if not youdao:
-                        out["dictionary"] = online.dictionary_api(text)
+                variants = spelling_variants(text)
+                # Prefer an online variant that has a Collins entry.  The base
+                # query may be a valid British spelling but missing from the
+                # Collins/Webster data sets, which are American-leaning.
+                youdao = online.youdao_lookup(text, full=full) if settings.get("source_youdao", True) else None
+                used_variant = ""
+                if settings.get("source_youdao", True) and not (youdao or {}).get("collins"):
+                    for alt in variants:
+                        if not self.lex.lookup_word(alt)[0]:
+                            continue
+                        alt_data = online.youdao_lookup(alt, full=full)
+                        if (alt_data or {}).get("collins"):
+                            youdao = alt_data
+                            used_variant = alt
+                            break
+                out["youdao"] = youdao
+                if not youdao:
+                    out["dictionary"] = online.dictionary_api(text)
                 if settings.get("source_datamuse", True):
-                    out["synonyms"] = online.datamuse_synonyms(text)
+                    out["synonyms"] = online.datamuse_synonyms(used_variant or text)
                 variant = settings.get("mw_variant", "collegiate")
                 mw_key = settings.get("mw_collegiate_key" if variant == "collegiate" else "mw_learners_key", "")
                 if mw_key:
-                    out["merriam"] = online.merriam_lookup(text, mw_key, variant)
+                    mw = online.merriam_lookup(used_variant or text, mw_key, variant)
+                    if not (mw or {}).get("entries"):
+                        for alt in variants:
+                            if not self.lex.lookup_word(alt)[0]:
+                                continue
+                            alt_mw = online.merriam_lookup(alt, mw_key, variant)
+                            if (alt_mw or {}).get("entries"):
+                                mw = alt_mw
+                                used_variant = used_variant or alt
+                                break
+                    out["merriam"] = mw
+                if used_variant:
+                    out["lookup_variant"] = used_variant
             elif settings.get("cn_en", True) and (
                 kind == "sentence" or (kind == "zh" and not local["cedict"] and not local["reverse"])
             ):

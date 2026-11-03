@@ -472,6 +472,11 @@ class SearchPage(QWidget):
             self.result_layout.addWidget(
                 label("「%s」是「%s」的变化形式，已按原形显示。" % (res["query"], base), "faint")
             )
+        lookup_variant = (online or {}).get("lookup_variant")
+        if lookup_variant:
+            self.result_layout.addWidget(
+                label("在线词典没有「%s」的词条，已按「%s」查询。" % (res["query"], lookup_variant), "faint")
+            )
 
         columns = QHBoxLayout()
         columns.setSpacing(14)
@@ -502,7 +507,10 @@ class SearchPage(QWidget):
             if show_offline_cn:
                 card = section_card(
                     "中文释义",
-                    extra=label("离线 · ECDICT", "faint") if parallel else None,
+                    extra=label(
+                        "离线 · ECDICT · 在线无结果" if fallback_source else "离线 · ECDICT",
+                        "faint",
+                    ) if (parallel or fallback_source) else None,
                 )
                 pos_data = entry.get("pos") or {}
                 for code, name, text in pos_data.get("groups", []):
