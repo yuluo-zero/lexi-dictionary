@@ -1,4 +1,4 @@
-﻿# 划词词典 · Lexi Dictionary
+# 划词词典 · Lexi Dictionary
 
 一个轻量、干净、**划词即查**的 Windows 中英词典。
 
@@ -6,7 +6,7 @@
 
 ![宣传片封面](docs/media/cover.png)
 
-[▶ 45 秒宣传片](docs/media/lexi_promo.mp4) · [B 站视频](<B站视频链接>)
+[▶ 45 秒宣传片](docs/media/lexi_promo.mp4) · B站：待上传
 
 ## 功能
 
