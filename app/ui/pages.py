@@ -482,7 +482,11 @@ class SearchPage(QWidget):
         columns.addLayout(left, 1)
 
         # Chinese definitions: online first when available, offline fallback
-        online_cn = bool(yd.get("cn")) and self.settings.get("online_first", True)
+        online_cn = (
+            bool(yd.get("cn"))
+            and self.settings.get("online_first", True)
+            and self.view_source in ("all", "youdao")
+        )
         parallel = bool(self.settings.get("parallel_sources", False) and self.view_source == "all")
         show_offline_cn = (
             bool(entry.get("translation")) and self.view_source in ("all", "ecdict")
