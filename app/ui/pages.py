@@ -505,6 +505,10 @@ class SearchPage(QWidget):
         )
         if self.settings.get("cn_en", True):
             if show_offline_cn:
+                if fallback_source:
+                    left.addWidget(
+                        label("当前在线来源没有返回结果，以下为离线 ECDICT 释义。", "faint")
+                    )
                 card = section_card(
                     "中文释义",
                     extra=label(
