@@ -6,7 +6,7 @@
 
 ![宣传片封面](docs/media/cover.png)
 
-[▶ 45 秒宣传片](docs/media/lexi_promo.mp4) · B站：待上传
+[▶ 45 秒宣传片](docs/media/lexi_promo.mp4) · [B站](https://www.bilibili.com/video/BV1iP4V6wEwc)
 
 ## 功能
 
