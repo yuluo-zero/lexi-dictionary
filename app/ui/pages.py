@@ -487,9 +487,15 @@ class SearchPage(QWidget):
             and self.settings.get("online_first", True)
             and self.view_source in ("all", "youdao")
         )
+        fallback_source = (
+            (self.view_source == "collins" and not yd.get("collins"))
+            or (self.view_source == "merriam" and not mw.get("entries"))
+            or (self.view_source == "youdao" and not yd.get("cn"))
+        )
         parallel = bool(self.settings.get("parallel_sources", False) and self.view_source == "all")
         show_offline_cn = (
-            bool(entry.get("translation")) and self.view_source in ("all", "ecdict")
+            bool(entry.get("translation"))
+            and (self.view_source in ("all", "ecdict") or fallback_source)
             and (parallel or not online_cn)
         )
         if self.settings.get("cn_en", True):
