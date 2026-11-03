@@ -1,0 +1,27 @@
+.venv/
+__pycache__/
+*.py[cod]
+*.pyo
+*.log
+*.tmp
+
+# local user data / dictionaries / API keys
+data/
+downloads/
+build/
+wheels/
+runtime/
+*.db
+*.db.bak
+settings.json
+user.db
+*.pre-restore.bak
+*.bak
+.github_token.txt
+.env
+
+# OS / editor
+Thumbs.db
+desktop.ini
+.vscode/
+.idea/
