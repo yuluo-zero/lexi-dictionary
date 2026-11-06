@@ -416,6 +416,26 @@ class SearchPage(QWidget):
                 out.append(s)
         return "\n".join(out)
 
+    @classmethod
+    def _custom_preview(cls, text: str, max_lines: int = 4) -> str:
+        lines = cls._custom_display_text(text).splitlines()
+        out = []
+        for line in lines:
+            # Etymology, headword respelling and dictionary codes are noise
+            # in a compact result card; keep them for the expanded view.
+            if re.match(r"^\[\s*(?:Date|Origin|Language):", line, re.I):
+                continue
+            if re.match(r"^\d*\s*W\d*\s*/", line):
+                continue
+            if "·" in line and "/" in line:
+                continue
+            if line == "=":
+                continue
+            out.append(line)
+            if len(out) >= max_lines:
+                break
+        return "\n".join(out) or cls._custom_display_text(text)[:700]
+
     def _update_status(self, res):
         parts = []
         if res.get("entry"):
@@ -579,18 +599,18 @@ class SearchPage(QWidget):
                 top.addStretch(1)
                 card.body().addLayout(top)
                 if item.get("translation"):
-                    txt = self._custom_display_text(item["translation"])
-                    if not self._local_expanded and len(txt) > 700:
-                        txt = txt[:700].rstrip() + "\n…"
+                    txt = (
+                        self._custom_display_text(item["translation"])
+                        if self._local_expanded
+                        else self._custom_preview(item["translation"], 3)
+                    )
                     card.body().addWidget(label(txt, "def", wrap=True))
                 if item.get("definition"):
-                    txt = self._custom_display_text(item["definition"])
-                    if not self._local_expanded:
-                        lines = txt.splitlines()
-                        if len(lines) > 6:
-                            txt = "\n".join(lines[:6]).rstrip() + "\n…"
-                        if len(txt) > 700:
-                            txt = txt[:700].rstrip() + "\n…"
+                    txt = (
+                        self._custom_display_text(item["definition"])
+                        if self._local_expanded
+                        else self._custom_preview(item["definition"], 5)
+                    )
                     card.body().addWidget(label(txt, "en", wrap=True))
                 card.body().addSpacing(6)
             left.addWidget(card)
