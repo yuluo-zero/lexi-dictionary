@@ -10,7 +10,7 @@ import threading
 
 APP_NAME = "划词词典"
 APP_EN = "Lexi"
-VERSION = "1.0.0"
+VERSION = "1.1.0"
 
 _lock = threading.RLock()
 
