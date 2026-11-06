@@ -14,8 +14,152 @@ import re
 PREFIX = "@@LEXI2@@"
 
 
+def soft_case(text: str) -> str:
+    text = (text or "").strip()
+    if not text:
+        return ""
+    letters = [c for c in text if c.isalpha()]
+    if letters and sum(c.isupper() for c in letters) / len(letters) > 0.7:
+        text = text.lower()
+        text = text[:1].upper() + text[1:]
+    return text
+
+
+def category_label(text: str) -> str:
+    text = (text or "").strip()
+    exact = {
+        "ADV.": "Adverbs",
+        "PHRASES": "Phrases",
+        "PREP.": "Prepositions",
+        "NOUN": "Nouns",
+        "VERB": "Verbs",
+        "ADJ.": "Adjectives",
+    }
+    if text.upper() in exact:
+        return exact[text.upper()]
+    if text.upper().startswith("VERB + "):
+        return "Verb + " + text[7:].strip().lower()
+    return soft_case(text)
+
+
+def parse_thesaurus(xmls, word: str) -> dict | None:
+    raw = "".join(xmls or [])
+    pos = ""
+    pm = re.search(
+        r'<font[^>]*color="#209020"[^>]*>\s*([^<]+?)\s*</font>', raw, re.I
+    )
+    if pm:
+        pos = pm.group(1).strip()
+    marks = list(re.finditer(r"<b>\s*(\d+)\s*</b>", raw))
+    senses = []
+    for idx, mark in enumerate(marks):
+        end = marks[idx + 1].start() if idx + 1 < len(marks) else len(raw)
+        block = raw[mark.end():end]
+        examples = [_clean(x) for x in re.findall(
+            r'<font[^>]*color="#808080"[^>]*>(.*?)</font>', block, re.S
+        )]
+        plain = _clean(block)
+        plain = _remove_all(plain, examples)
+        plain = re.sub(r"<[^>]+>", " ", plain)
+        defn = " ".join(x.strip() for x in plain.splitlines() if x.strip())
+        defn = defn.strip(" :;")
+        if not defn and not examples:
+            continue
+        senses.append({
+            "no": mark.group(1),
+            "title": "",
+            "gram": "",
+            "def": defn[:2600],
+            "examples": [x for x in examples if x][:8],
+        })
+    if not senses:
+        examples = [_clean(x) for x in re.findall(
+            r'<font[^>]*color="#808080"[^>]*>(.*?)</font>', raw, re.S
+        )]
+        examples = [x for x in examples if x]
+        plain = _clean(raw)
+        plain = _remove_all(plain, examples)
+        lines = [x.strip() for x in plain.splitlines() if x.strip()]
+        defn = " ".join(lines)[:2600]
+        if defn or examples:
+            senses.append({
+                "no": "1",
+                "title": "",
+                "gram": "",
+                "def": defn,
+                "examples": examples[:8],
+            })
+
+    if not senses:
+        return None
+    return {
+        "v": 2,
+        "kind": "thesaurus",
+        "head": word,
+        "phon": "",
+        "pos": pos,
+        "index": [],
+        "etym": "",
+        "senses": senses,
+    }
+
+
 def encode(data: dict) -> str:
     return PREFIX + json.dumps(data, ensure_ascii=False, separators=(",", ":"))
+
+
+def preview_text(data: dict, max_senses: int = 1) -> str:
+    senses = (data or {}).get("senses") or []
+    out = []
+    for sense in senses[:max_senses]:
+        title = soft_case(sense.get("title", ""))
+        defn = (sense.get("def") or "").strip()
+        line = defn
+        if title:
+            line = (title + " — " + defn).strip(" —")
+        if line:
+            out.append(line)
+    return "\n".join(out)
+
+
+def to_html(data: dict, expanded: bool = True) -> str:
+    esc = html.escape
+    kind = (data or {}).get("kind")
+    senses = (data or {}).get("senses") or []
+    limit = len(senses) if expanded else min(3, len(senses))
+    parts = ['<div style="line-height:1.5">']
+    for sense in senses[:limit]:
+        title = soft_case(sense.get("title", ""))
+        no = (sense.get("no") or "").strip()
+        head = " ".join(x for x in (no, title) if x)
+        if head:
+            parts.append('<p style="margin:6px 0 2px 0"><b>%s</b>' % esc(head))
+            gram = (sense.get("gram") or "").strip()
+            if gram:
+                parts.append(' <span style="color:#888">%s</span>' % esc(gram))
+            parts.append("</p>")
+        if kind == "collocations":
+            for group in sense.get("groups") or []:
+                label = category_label(group.get("label", ""))
+                if label:
+                    parts.append('<p style="margin:4px 0 1px 0;color:#777">%s</p>' % esc(label))
+                for item in group.get("items") or []:
+                    parts.append('<p style="margin:1px 0">• %s' % esc(item.get("text", "")))
+                    if expanded and item.get("example"):
+                        parts.append('<br><span style="color:#888">%s</span>' % esc(item["example"]))
+                    parts.append("</p>")
+        else:
+            defn = (sense.get("def") or "").strip()
+            if defn:
+                parts.append('<p style="margin:2px 0">%s</p>' % esc(defn))
+            if expanded:
+                for ex in sense.get("examples") or []:
+                    parts.append('<p style="margin:1px 0;color:#888">• %s</p>' % esc(ex))
+    if expanded and (data or {}).get("etym"):
+        parts.append('<p style="margin:8px 0 1px 0;color:#777">词源</p>')
+        parts.append('<p style="margin:1px 0;color:#888">%s</p>' % esc(data["etym"]))
+    parts.append("</div>")
+    return "".join(parts)
 
 
 def decode(text: str) -> dict | None:
@@ -136,6 +280,27 @@ def parse_longman(xmls, word: str) -> dict | None:
             "def": defn,
             "examples": examples[:8],
         })
+
+    if not senses:
+        examples = [_clean(x) for x in re.findall(
+            r'<font[^>]*color="#004080"[^>]*>(.*?)</font>', body, re.S
+        )]
+        examples = [x for x in examples if x]
+        plain = _clean(body)
+        plain = _remove_all(plain, examples + [etym])
+        lines = [
+            line.strip() for line in plain.splitlines()
+            if line.strip() and not re.match(r"^\d+【", line.strip())
+        ]
+        defn = " ".join(lines)[:2600]
+        if defn or examples:
+            senses.append({
+                "no": "1",
+                "title": "",
+                "gram": "",
+                "def": defn,
+                "examples": examples[:8],
+            })
 
     if not senses:
         return None

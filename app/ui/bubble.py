@@ -85,6 +85,7 @@ class Bubble(QWidget):
 
         self.detail_lb = QLabel(self.card)
         self.detail_lb.setWordWrap(True)
+        self.detail_lb.setTextFormat(Qt.RichText)
         self.detail_lb.setTextInteractionFlags(Qt.TextSelectableByMouse)
         self.detail_lb.setStyleSheet(f"color:{theme['sub']}; font-size:12px;")
         self.detail_scroll = QScrollArea(self.card)

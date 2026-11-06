@@ -138,6 +138,7 @@ class SearchPage(QWidget):
         self._completer.setFilterMode(Qt.MatchStartsWith)
         self._completer.setMaxVisibleItems(8)
         self.search_box.setCompleter(self._completer)
+        self.search_box.textEdited.connect(self._update_completions)
         app.engine.local_ready.connect(self._on_local)
         app.engine.online_ready.connect(self._on_online)
 
@@ -223,8 +224,8 @@ class SearchPage(QWidget):
             self.searched.emit(text)
 
     def _on_typing(self, text: str):
-        self._update_completions(text)
         if not text.strip():
+            self._completer_model.setStringList([])
             self.result = None
             self.online_data = None
             self.result_scroll.hide()
@@ -247,6 +248,10 @@ class SearchPage(QWidget):
         text = text.strip()
         if not text:
             return
+        try:
+            self._completer.popup().hide()
+        except Exception:
+            pass
         self.search_box.setText(text)
         self.view_source = "all"
         self.chips_row.hide()
@@ -456,6 +461,34 @@ class SearchPage(QWidget):
         return "\n".join(out) or cls._custom_display_text(text)[:700]
 
     @staticmethod
+    def _soft_case(text: str) -> str:
+        text = (text or "").strip()
+        if not text:
+            return ""
+        letters = [c for c in text if c.isalpha()]
+        if letters and sum(c.isupper() for c in letters) / len(letters) > 0.7:
+            text = text.lower()
+            text = text[:1].upper() + text[1:]
+        return text
+
+    @classmethod
+    def _category_label(cls, text: str) -> str:
+        text = (text or "").strip()
+        exact = {
+            "ADV.": "Adverbs",
+            "PHRASES": "Phrases",
+            "PREP.": "Prepositions",
+            "NOUN": "Nouns",
+            "VERB": "Verbs",
+            "ADJ.": "Adjectives",
+        }
+        if text.upper() in exact:
+            return exact[text.upper()]
+        if text.upper().startswith("VERB + "):
+            return "Verb + " + text[7:].strip().lower()
+        return cls._soft_case(text)
+
+    @staticmethod
     def _render_structured(card, data: dict, expanded: bool):
         kind = data.get("kind")
         senses = data.get("senses") or []
@@ -468,7 +501,7 @@ class SearchPage(QWidget):
                 head.addWidget(label(no, "faint"))
             title = (sense.get("title") or "").strip()
             if title:
-                head.addWidget(label(title, "body"))
+                head.addWidget(label(SearchPage._soft_case(title), "body"))
             gram = (sense.get("gram") or "").strip()
             if gram:
                 head.addWidget(label(gram, "faint"))
@@ -480,7 +513,9 @@ class SearchPage(QWidget):
                 glimit = len(groups) if expanded else min(2, len(groups))
                 for group in groups[:glimit]:
                     if group.get("label"):
-                        card.body().addWidget(label(group["label"], "faint"))
+                        card.body().addWidget(
+                            label(SearchPage._category_label(group["label"]), "faint")
+                        )
                     items = group.get("items") or []
                     ilimit = len(items) if expanded else min(3, len(items))
                     for item in items[:ilimit]:

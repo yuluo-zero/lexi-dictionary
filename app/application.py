@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import html
 import os
 import threading
 import time
@@ -14,6 +15,7 @@ from PySide6.QtWidgets import QApplication, QMenu, QSystemTrayIcon
 
 from . import config, online
 from . import config as config_module
+from . import custom_format as custom_fmt
 from .lexicon import Lexicon, has_cjk
 from .search import SearchEngine, classify
 from .selection import SelectionWatcher
@@ -62,6 +64,7 @@ class Application(QObject):
         self.marker.activated.connect(self._open_bubble_from_marker)
         self._suppress_same = False
         self._last_selection = ""
+        self._selection_at = 0.0
         self._bubble_source = ""
         self._bubble_pending_online = False
         self._bubble_seq = 0
@@ -286,17 +289,29 @@ class Application(QObject):
 
         point = QPoint(x, y)
         # Selections inside our own window are allowed only in the result
-        # area.  Selecting the search box, settings or sidebar must not pop
-        # the marker.
-        if self.window.isVisible() and self.window.isActiveWindow() and self.window.geometry().contains(point):
+        # area.  Use the real foreground window: Qt's isActiveWindow() can
+        # stay true while the user is clicking another app.
+        own_foreground = False
+        try:
+            import ctypes
+            own_foreground = (
+                ctypes.windll.user32.GetForegroundWindow()
+                == int(self.window.windowHandle().winId())
+            )
+        except Exception:
+            own_foreground = self.window.isActiveWindow()
+        if self.window.isVisible() and own_foreground and self.window.geometry().contains(point):
             page = self.window.search_page
             if not page.result_scroll.isVisible():
+                log.info("selection skipped: own window, result area hidden")
                 return
             if not page.result_scroll.rect().contains(
                 page.result_scroll.mapFromGlobal(point)
             ):
+                log.info("selection skipped: own window outside result area")
                 return
         self._last_selection = text
+        self._selection_at = time.time()
 
         if len(text) > 60 or "\n" in text:
             title = text.replace("\n", " ")
@@ -344,10 +359,15 @@ class Application(QObject):
             local = []
 
         def local_payload(item):
-            body = item.get("definition") or item.get("translation") or ""
-            lines = [line.strip() for line in body.splitlines() if line.strip()]
-            body = " ".join(lines[:3])[:180]
-            phon = item.get("phonetic") or ""
+            data = custom_fmt.decode(item.get("definition", ""))
+            if data:
+                body = custom_fmt.preview_text(data, 1)
+                phon = data.get("phon") or item.get("phonetic") or ""
+            else:
+                body = item.get("definition") or item.get("translation") or ""
+                lines = [line.strip() for line in body.splitlines() if line.strip()]
+                body = " ".join(lines[:3])[:180]
+                phon = item.get("phonetic") or ""
             if not phon:
                 try:
                     e, _ = self.lexicon.lookup_word(word)
@@ -456,10 +476,20 @@ class Application(QObject):
         try:
             custom = self.store.custom_lookup(word)
             for item in custom[:3]:
-                body = item.get("definition") or item.get("translation") or ""
-                body = "\n".join(line for line in body.splitlines()[:10] if line.strip())
-                if body:
-                    parts.append("【%s】\n%s" % (item.get("source", "本地"), body[:1200]))
+                source = html.escape(item.get("source") or "本地")
+                parts.append(
+                    '<p style="margin:8px 0 2px 0;color:#777"><b>%s</b></p>' % source
+                )
+                data = custom_fmt.decode(item.get("definition", ""))
+                if data:
+                    parts.append(custom_fmt.to_html(data, expanded=True))
+                else:
+                    body = item.get("definition") or item.get("translation") or ""
+                    body = "\n".join(line for line in body.splitlines()[:12] if line.strip())
+                    parts.append(
+                        '<p style="margin:2px 0;white-space:pre-wrap">%s</p>'
+                        % html.escape(body[:1600])
+                    )
         except Exception:
             pass
         try:
@@ -467,20 +497,26 @@ class Application(QObject):
             if entry:
                 lines = []
                 for _code, name, text in (entry.get("pos", {}).get("groups") or [])[:4]:
-                    lines.append("%s  %s" % (name, text))
+                    lines.append("<b>%s</b> %s" % (html.escape(name), html.escape(text)))
                 if lines:
-                    parts.append("【ECDICT】\n" + "\n".join(lines)[:1600])
+                    parts.append(
+                        '<p style="margin:8px 0 2px 0;color:#777"><b>ECDICT</b></p>'
+                        '<p style="margin:2px 0">%s</p>' % "<br>".join(lines)
+                    )
         except Exception:
             pass
         try:
             wn = self.lexicon.lookup_wordnet(word)
             if wn:
-                lines = [item.get("definition", "") for item in wn[:3] if item.get("definition")]
+                lines = [html.escape(item.get("definition", "")) for item in wn[:3] if item.get("definition")]
                 if lines:
-                    parts.append("【WordNet】\n" + "\n".join(lines)[:1600])
+                    parts.append(
+                        '<p style="margin:8px 0 2px 0;color:#777"><b>WordNet</b></p>'
+                        '<p style="margin:2px 0">%s</p>' % "<br>".join(lines)
+                    )
         except Exception:
             pass
-        self.bubble.set_details("\n\n".join(parts) if parts else "没有更多离线释义。")
+        self.bubble.set_details("".join(parts) if parts else "没有更多离线释义。")
 
     def _on_key_pressed(self):
         if self.marker.isVisible():
@@ -496,6 +532,11 @@ class Application(QObject):
                 return
             self.bubble.hide_animated()
         if not self.marker.isVisible():
+            return
+        if time.time() - self._selection_at < 0.35:
+            # The watcher emits its click event around the same time as a new
+            # double-click selection.  Do not let that event hide the marker
+            # that was just created.
             return
         if self.marker.geometry().contains(point):
             return

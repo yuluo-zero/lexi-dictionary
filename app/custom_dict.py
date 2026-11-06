@@ -39,7 +39,7 @@ def _normalise(word: str, phonetic: str, translation: str, definition: str,
         "word": word,
         "phonetic": (phonetic or "").strip()[:80],
         "translation": translation[:4000],
-        "definition": definition[:8000],
+        "definition": definition[:50000],
         "source": (source or "").strip()[:120],
         "enabled": 1 if enabled else 0,
     }

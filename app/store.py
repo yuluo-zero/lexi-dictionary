@@ -198,7 +198,7 @@ class Store:
                 word.lower(),
                 str(item.get("phonetic") or "").strip()[:80],
                 translation[:4000],
-                definition[:12000],
+                definition[:50000],
                 item_source[:120],
                 now,
                 1 if item.get("enabled", 1) else 0,
