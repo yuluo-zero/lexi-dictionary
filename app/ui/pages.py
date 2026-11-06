@@ -364,14 +364,29 @@ class SearchPage(QWidget):
             QTimer.singleShot(0, lambda: bar.setValue(0))
         self._update_status(res)
 
+    def _ordered_source_keys(self):
+        defaults = ["ecdict", "wordnet", "local", "collins", "youdao", "merriam"]
+        raw = self.settings.get("source_order")
+        order = [k for k in (raw if isinstance(raw, list) else []) if k in defaults]
+        for key in defaults:
+            if key not in order:
+                order.append(key)
+        return order
+
     def _add_source_bar(self, kind: str):
-        sources = (
-            [("all", "全部"), ("ecdict", "ECDICT·离线"), ("wordnet", "WordNet·离线")]
-            + ([("local", "本地")] if (self.result or {}).get("custom") else [])
-            + [("collins", "柯林斯·在线"), ("youdao", "有道·在线"), ("merriam", "韦氏·在线")]
-            if kind == "en"
-            else [("all", "全部"), ("cedict", "CC-CEDICT·离线")]
-        )
+        labels = {
+            "ecdict": "ECDICT·离线", "wordnet": "WordNet·离线",
+            "local": "本地", "collins": "柯林斯·在线",
+            "youdao": "有道·在线", "merriam": "韦氏·在线",
+        }
+        if kind == "en":
+            sources = [("all", "全部")]
+            for key in self._ordered_source_keys():
+                if key == "local" and not (self.result or {}).get("custom"):
+                    continue
+                sources.append((key, labels[key]))
+        else:
+            sources = [("all", "全部"), ("cedict", "CC-CEDICT·离线")]
         holder = QWidget()
         row = QHBoxLayout(holder)
         row.setContentsMargins(0, 0, 0, 2)
@@ -567,6 +582,10 @@ class SearchPage(QWidget):
         right = QVBoxLayout()
         right.setSpacing(14)
         columns.addLayout(left, 1)
+        cards = {}
+
+        def put(key, card):
+            cards.setdefault(key, []).append(card)
 
         # User-provided local dictionary entries (never uploaded)
         if custom and self.view_source in ("all", "ecdict", "local"):
@@ -613,7 +632,7 @@ class SearchPage(QWidget):
                     )
                     card.body().addWidget(label(txt, "en", wrap=True))
                 card.body().addSpacing(6)
-            left.addWidget(card)
+            put("local", card)
 
         # Chinese definitions: online first when available, offline fallback
         online_cn = (
@@ -663,7 +682,7 @@ class SearchPage(QWidget):
                     card.body().addLayout(net)
                 if not pos_data.get("groups") and not pos_data.get("network"):
                     card.body().addWidget(label(entry.get("translation", ""), "def", wrap=True))
-                left.addWidget(card)
+                put("ecdict", card)
             if online_cn and self.view_source in ("all", "youdao") and (parallel or not show_offline_cn):
                 card = section_card("中文释义", extra=label("在线 · 有道", "faint"))
                 for line in yd["cn"][:self._cap(4)]:
@@ -678,7 +697,7 @@ class SearchPage(QWidget):
                         card.body().addLayout(row)
                     else:
                         card.body().addWidget(label(line, "def", wrap=True))
-                left.addWidget(card)
+                put("youdao", card)
 
         # English definitions: online first, offline WordNet fallback
         prefer_online = (
@@ -727,9 +746,9 @@ class SearchPage(QWidget):
                             ex_lb = label("“%s”" % ex, "example", wrap=True)
                             card.body().addWidget(ex_lb)
                     card.body().addSpacing(4)
-                left.addWidget(card)
+                put("wordnet", card)
             if od.get("meanings") and res.get("wordnet"):
-                self._online_dict_card(od, left)
+                put("youdao", self._online_dict_card(od))
 
         # Merriam-Webster official API
         if mw.get("entries") and self.view_source in ("all", "merriam"):
@@ -741,7 +760,7 @@ class SearchPage(QWidget):
                 for definition in item.get("defs", [])[:self._cap(4)]:
                     card.body().addWidget(label(definition, "en", wrap=True))
                 card.body().addSpacing(2)
-            left.addWidget(card)
+            put("merriam", card)
 
         # Collins authoritative definitions
         if yd.get("collins") and self.view_source in ("all", "collins"):
@@ -758,7 +777,7 @@ class SearchPage(QWidget):
                     if ex.get("zh"):
                         card.body().addWidget(label(ex["zh"], "sub", wrap=True))
                 card.body().addSpacing(2)
-            left.addWidget(card)
+            put("collins", card)
 
         # bilingual examples from Youdao
         if yd.get("examples") and self.view_source in ("all", "youdao"):
@@ -768,9 +787,42 @@ class SearchPage(QWidget):
                 if ex.get("zh"):
                     card.body().addWidget(label(ex["zh"], "sub", wrap=True))
                 card.body().addSpacing(2)
-            left.addWidget(card)
+            put("youdao", card)
 
-        if not left.count():
+        # collocations / phrases
+        if yd.get("phrs") and self.view_source in ("all", "youdao"):
+            card = section_card("搭配", extra=label("在线 · 有道", "faint"))
+            for phr in yd["phrs"][:self._cap(8)]:
+                row = QHBoxLayout()
+                row.setSpacing(10)
+                row.addWidget(label(phr["en"], "en"), 1)
+                if phr.get("zh"):
+                    row.addWidget(label(phr["zh"], "sub"), 1)
+                card.body().addLayout(row)
+            put("youdao", card)
+
+        # exam-style usage examples from Collins
+        if self.settings.get("target_exam") and yd.get("exam_sents") and self.view_source in ("all", "youdao"):
+            exam_name = EXAM_NAMES.get(self.settings.get("target_exam"), "")
+            card = section_card("考法例句", extra=label(f"柯林斯 · {exam_name}", "faint"))
+            for sent in yd["exam_sents"][:self._cap(4)]:
+                card.body().addWidget(label(sent["en"], "en", wrap=True))
+                if sent.get("zh"):
+                    card.body().addWidget(label(sent["zh"], "sub", wrap=True))
+                card.body().addSpacing(2)
+            put("youdao", card)
+
+        # Place top-level source cards in the user's order.
+        order = self._ordered_source_keys()
+        for key in order:
+            for card in cards.get(key, []):
+                left.addWidget(card)
+        for key, items in cards.items():
+            if key not in order:
+                for card in items:
+                    left.addWidget(card)
+
+        if not cards:
             card = section_card("释义")
             card.body().addWidget(
                 label("离线词典里没有找到「%s」。" % res["query"], "sub", wrap=True)
@@ -783,29 +835,6 @@ class SearchPage(QWidget):
                 holder = QWidget()
                 holder.setLayout(row)
                 card.body().addWidget(holder)
-            left.addWidget(card)
-
-        # collocations / phrases
-        if yd.get("phrs") and self.view_source in ("all", "youdao"):
-            card = section_card("搭配", extra=label("在线 · 有道", "faint"))
-            for phr in yd["phrs"][:self._cap(8)]:
-                row = QHBoxLayout()
-                row.setSpacing(10)
-                row.addWidget(label(phr["en"], "en"), 1)
-                if phr.get("zh"):
-                    row.addWidget(label(phr["zh"], "sub"), 1)
-                card.body().addLayout(row)
-            left.addWidget(card)
-
-        # exam-style usage examples from Collins
-        if self.settings.get("target_exam") and yd.get("exam_sents") and self.view_source in ("all", "youdao"):
-            exam_name = EXAM_NAMES.get(self.settings.get("target_exam"), "")
-            card = section_card("考法例句", extra=label(f"柯林斯 · {exam_name}", "faint"))
-            for sent in yd["exam_sents"][:self._cap(4)]:
-                card.body().addWidget(label(sent["en"], "en", wrap=True))
-                if sent.get("zh"):
-                    card.body().addWidget(label(sent["zh"], "sub", wrap=True))
-                card.body().addSpacing(2)
             left.addWidget(card)
 
         # right column: web senses, forms, synonyms, frequency
@@ -1023,7 +1052,7 @@ class SearchPage(QWidget):
         card.body().addWidget(label("到「设置 → 词典与翻译」里打开即可。", "faint"))
         self.result_layout.addWidget(card)
 
-    def _online_dict_card(self, od: dict, left):
+    def _online_dict_card(self, od: dict):
         card = section_card("在线词典", extra=label("Free Dictionary", "faint"))
         for m in od.get("meanings", [])[:3]:
             pos = self._pos_cn(m.get("pos", ""))
@@ -1033,7 +1062,7 @@ class SearchPage(QWidget):
                 if d.get("example"):
                     card.body().addWidget(label("“%s”" % d["example"], "example", wrap=True))
             card.body().addSpacing(3)
-        left.addWidget(card)
+        return card
 
     def _render_missing(self, res):
         card = section_card("没有找到")
@@ -1609,6 +1638,39 @@ class SettingsPage(QWidget):
         card.body().addWidget(SettingRow("韦氏版本", "选择用哪一部在线查询", mwv))
         lay.addWidget(card)
 
+        # ---- 显示顺序
+        lay.addWidget(self._section_label("显示顺序"))
+        order_card = Card()
+        labels = {
+            "ecdict": "ECDICT · 离线",
+            "wordnet": "WordNet · 离线",
+            "local": "本地词典",
+            "collins": "柯林斯 · 在线",
+            "youdao": "有道 · 在线",
+            "merriam": "韦氏 · 在线",
+        }
+        keys = [k for k in (self.s.get("source_order") or []) if k in labels]
+        for k in labels:
+            if k not in keys:
+                keys.append(k)
+        for idx, key in enumerate(keys):
+            row_widget = QWidget()
+            rl = QHBoxLayout(row_widget)
+            rl.setContentsMargins(0, 0, 0, 0)
+            rl.setSpacing(6)
+            up = QPushButton("↑")
+            up.setObjectName("chip")
+            up.setFixedWidth(30)
+            up.clicked.connect(lambda _=False, k=key: self._move_source_order(k, -1))
+            rl.addWidget(up)
+            down = QPushButton("↓")
+            down.setObjectName("chip")
+            down.setFixedWidth(30)
+            down.clicked.connect(lambda _=False, k=key: self._move_source_order(k, 1))
+            rl.addWidget(down)
+            order_card.body().addWidget(SettingRow(labels[key], "", row_widget))
+        lay.addWidget(order_card)
+
         # ---- 本地词典
         lay.addWidget(self._section_label("本地词典"))
         card = Card()
@@ -2014,6 +2076,23 @@ class SettingsPage(QWidget):
         else:
             text = "已替换：恢复 %d 个生词、%d 条历史记录。" % (counts["words"], counts["history"])
         QMessageBox.information(self, "恢复完成", text)
+
+    def _move_source_order(self, key: str, delta: int):
+        defaults = ["ecdict", "wordnet", "local", "collins", "youdao", "merriam"]
+        order = [k for k in (self.s.get("source_order") or []) if k in defaults]
+        for k in defaults:
+            if k not in order:
+                order.append(k)
+        if key not in order:
+            return
+        i = order.index(key)
+        j = max(0, min(len(order) - 1, i + delta))
+        if i == j:
+            return
+        order[i], order[j] = order[j], order[i]
+        self._set("source_order", order)
+        self.app.window.search_page.rerender()
+        QTimer.singleShot(0, self.app.window.refresh_settings)
 
     def _set(self, key: str, value):
         self.app.set_setting(key, value)

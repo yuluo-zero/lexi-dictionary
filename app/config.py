@@ -76,6 +76,7 @@ DEFAULTS = {
     "online_first": True,           # 有网时优先用在线释义
     "full_content": False,          # 完整模式：不截断释义/例句
     "parallel_sources": False,      # 「全部」并列显示所有来源
+    "source_order": ["ecdict", "wordnet", "local", "collins", "youdao", "merriam"],
     "fulltext_enabled": False,      # 全文搜索（默认关闭）
     "mw_collegiate_key": "",
     "mw_learners_key": "",

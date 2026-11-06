@@ -275,8 +275,21 @@ class Application(QObject):
         text = text.strip()
         if not text:
             return
-        self._last_selection = text
         from PySide6.QtCore import QPoint
+
+        point = QPoint(x, y)
+        # Selections inside our own window are allowed only in the result
+        # area.  Selecting the search box, settings or sidebar must not pop
+        # the marker.
+        if self.window.isVisible() and self.window.geometry().contains(point):
+            page = self.window.search_page
+            if not page.result_scroll.isVisible():
+                return
+            if not page.result_scroll.rect().contains(
+                page.result_scroll.mapFromGlobal(point)
+            ):
+                return
+        self._last_selection = text
 
         if len(text) > 60 or "\n" in text:
             title = text.replace("\n", " ")
