@@ -353,11 +353,18 @@ class MainWindow(QWidget):
     def refresh_settings(self):
         idx = 3
         old = self.settings_page
+        try:
+            pos = old.scroll.verticalScrollBar().value()
+        except Exception:
+            pos = 0
         self.settings_page = SettingsPage(self.app)
         self.pages.insertWidget(idx, self.settings_page)
         self.pages.removeWidget(old)
         old.deleteLater()
         self.pages.setCurrentIndex(idx)
+        QTimer.singleShot(
+            0, lambda: self.settings_page.scroll.verticalScrollBar().setValue(pos)
+        )
 
     # ------------------------------------------------------------------ theme
     def apply_theme(self, mode: str | None = None):

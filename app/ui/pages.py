@@ -127,6 +127,7 @@ class SearchPage(QWidget):
         self.online_data = None
         self.view_source = "all"
         self._local_open = set()
+        self._example_open = set()
         self.fulltext_results = []
         self.ft_token = 0
         self.ft_signals = _FulltextSignals(self)
@@ -488,12 +489,11 @@ class SearchPage(QWidget):
             return "Verb + " + text[7:].strip().lower()
         return cls._soft_case(text)
 
-    @staticmethod
-    def _render_structured(card, data: dict, expanded: bool):
+    def _render_structured(self, card, data: dict, expanded: bool, source: str = ""):
         kind = data.get("kind")
         senses = data.get("senses") or []
         limit = len(senses) if expanded else min(3, len(senses))
-        for sense in senses[:limit]:
+        for si, sense in enumerate(senses[:limit]):
             no = (sense.get("no") or "").strip()
             title = (sense.get("title") or "").strip()
             if no and not title and kind != "collocations":
@@ -519,7 +519,7 @@ class SearchPage(QWidget):
             if kind == "collocations":
                 groups = sense.get("groups") or []
                 glimit = len(groups) if expanded else min(2, len(groups))
-                for group in groups[:glimit]:
+                for gi, group in enumerate(groups[:glimit]):
                     if group.get("label"):
                         card.body().addWidget(
                             label(SearchPage._category_label(group["label"]), "faint")
@@ -534,11 +534,24 @@ class SearchPage(QWidget):
                             "%s — %s" % (item.get("text", ""), item["example"])
                             for item in items
                             if item.get("example")
-                        ][:3]
+                        ]
                         if examples:
-                            card.body().addWidget(
-                                label("；".join(examples), "example", wrap=True)
+                            key = "%s|%s|%s|%s" % (source, si, gi, no)
+                            opened = key in self._example_open
+                            btn = QPushButton(
+                                "收起例句" if opened else "例句 %d 条" % len(examples)
                             )
+                            btn.setObjectName("chip")
+                            btn.setCursor(Qt.PointingHandCursor)
+                            btn.clicked.connect(
+                                lambda _=False, k=key: self._toggle_examples(k)
+                            )
+                            card.body().addWidget(btn, 0, Qt.AlignLeft)
+                            if opened:
+                                for ex in examples:
+                                    card.body().addWidget(
+                                        label("• " + ex, "example", wrap=True)
+                                    )
             else:
                 defn = (sense.get("def") or "").strip()
                 if defn:
@@ -553,6 +566,13 @@ class SearchPage(QWidget):
             card.body().addWidget(hline())
             card.body().addWidget(label("词源", "faint"))
             card.body().addWidget(label(data["etym"], "sub", wrap=True))
+
+    def _toggle_examples(self, key: str):
+        if key in self._example_open:
+            self._example_open.discard(key)
+        else:
+            self._example_open.add(key)
+        self._render(keep_scroll=True)
 
     def _update_status(self, res):
         parts = []
@@ -731,7 +751,7 @@ class SearchPage(QWidget):
                 top.addStretch(1)
                 card.body().addLayout(top)
                 if structured:
-                    self._render_structured(card, structured, is_open)
+                    self._render_structured(card, structured, is_open, source)
                     card.body().addSpacing(6)
                     continue
                 if item.get("translation"):
@@ -1621,6 +1641,7 @@ class SettingsPage(QWidget):
         self.app = app
         self.s = app.settings
         area, inner, lay = scroll_page()
+        self.scroll = area
         outer = QVBoxLayout(self)
         outer.setContentsMargins(0, 0, 0, 0)
         outer.addWidget(area)
