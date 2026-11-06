@@ -490,9 +490,13 @@ class Application(QObject):
         self.watcher.reset_dedupe()
 
     def _on_global_click(self, x: int, y: int):
+        point = QPoint(x, y)
+        if self.bubble.isVisible():
+            if self.bubble.geometry().contains(point):
+                return
+            self.bubble.hide_animated()
         if not self.marker.isVisible():
             return
-        point = QPoint(x, y)
         if self.marker.geometry().contains(point):
             return
         if self.bubble.isVisible() and self.bubble.geometry().contains(point):

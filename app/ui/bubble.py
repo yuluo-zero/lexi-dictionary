@@ -7,7 +7,8 @@ from PySide6.QtCore import (
 )
 from PySide6.QtGui import QColor, QFont, QGuiApplication, QPainter, QPainterPath
 from PySide6.QtWidgets import (
-    QFrame, QGraphicsDropShadowEffect, QHBoxLayout, QLabel, QPushButton, QVBoxLayout, QWidget,
+    QFrame, QGraphicsDropShadowEffect, QHBoxLayout, QLabel, QPushButton,
+    QScrollArea, QVBoxLayout, QWidget,
 )
 
 from . import icons
@@ -86,8 +87,23 @@ class Bubble(QWidget):
         self.detail_lb.setWordWrap(True)
         self.detail_lb.setTextInteractionFlags(Qt.TextSelectableByMouse)
         self.detail_lb.setStyleSheet(f"color:{theme['sub']}; font-size:12px;")
-        self.detail_lb.hide()
-        lay.addWidget(self.detail_lb)
+        self.detail_scroll = QScrollArea(self.card)
+        self.detail_scroll.setWidgetResizable(True)
+        self.detail_scroll.setFrameShape(QFrame.NoFrame)
+        self.detail_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        self.detail_scroll.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
+        self.detail_scroll.setStyleSheet(
+            f"QScrollArea{{background:transparent;border:none;}}"
+            f"QScrollBar:vertical{{width:6px;background:transparent;}}"
+            f"QScrollBar::handle:vertical{{background:{theme['border']};border-radius:3px;}}"
+        )
+        detail_host = QWidget()
+        dl = QVBoxLayout(detail_host)
+        dl.setContentsMargins(0, 0, 4, 0)
+        dl.addWidget(self.detail_lb)
+        self.detail_scroll.setWidget(detail_host)
+        self.detail_scroll.hide()
+        lay.addWidget(self.detail_scroll)
 
         divider = QFrame(self.card)
         divider.setFixedHeight(1)
@@ -181,7 +197,7 @@ class Bubble(QWidget):
         self.source_lb.setVisible(bool(source))
         self._expanded = False
         self.detail_lb.clear()
-        self.detail_lb.hide()
+        self.detail_scroll.hide()
         self.expand_btn.setText("展开")
         self.setFixedWidth(344)
         self.apply_theme()
@@ -254,9 +270,18 @@ class Bubble(QWidget):
 
     def _set_expanded(self, expanded: bool):
         self._expanded = bool(expanded)
-        self.detail_lb.setVisible(self._expanded)
+        self.detail_scroll.setVisible(self._expanded)
         self.expand_btn.setText("收起" if self._expanded else "展开")
-        self.setFixedWidth(440 if self._expanded else 344)
+        self.setFixedWidth(420 if self._expanded else 344)
+        if self._expanded:
+            self.detail_lb.setFixedWidth(390)
+            self.detail_lb.adjustSize()
+            screen = QGuiApplication.screenAt(self.pos()) or QGuiApplication.primaryScreen()
+            max_h = 420
+            if screen:
+                max_h = min(420, int(screen.availableGeometry().height() * 0.55))
+            content_h = self.detail_lb.sizeHint().height() + 8
+            self.detail_scroll.setFixedHeight(max(80, min(content_h, max_h)))
         self.adjustSize()
         self._clamp_to_screen()
         if self._expanded:

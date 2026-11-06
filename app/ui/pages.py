@@ -15,6 +15,7 @@ from PySide6.QtWidgets import (
 )
 
 from . import icons
+from .. import custom_format as custom_fmt
 from ..custom_dict import parse_custom_dictionary
 from .theme import theme
 from .widgets import (
@@ -125,7 +126,7 @@ class SearchPage(QWidget):
         self.result = None
         self.online_data = None
         self.view_source = "all"
-        self._local_expanded = False
+        self._local_open = set()
         self.fulltext_results = []
         self.ft_token = 0
         self.ft_signals = _FulltextSignals(self)
@@ -412,9 +413,12 @@ class SearchPage(QWidget):
         self.view_source = source
         self._render(keep_scroll=True)
 
-    def _toggle_local_expanded(self):
-        self._local_expanded = not self._local_expanded
-        self._render(keep_scroll=False)
+    def _toggle_local_source(self, source: str):
+        if source in self._local_open:
+            self._local_open.discard(source)
+        else:
+            self._local_open.add(source)
+        self._render(keep_scroll=True)
 
     @staticmethod
     def _custom_display_text(text: str) -> str:
@@ -450,6 +454,55 @@ class SearchPage(QWidget):
             if len(out) >= max_lines:
                 break
         return "\n".join(out) or cls._custom_display_text(text)[:700]
+
+    @staticmethod
+    def _render_structured(card, data: dict, expanded: bool):
+        kind = data.get("kind")
+        senses = data.get("senses") or []
+        limit = len(senses) if expanded else min(3, len(senses))
+        for sense in senses[:limit]:
+            head = QHBoxLayout()
+            head.setSpacing(8)
+            no = (sense.get("no") or "").strip()
+            if no:
+                head.addWidget(label(no, "faint"))
+            title = (sense.get("title") or "").strip()
+            if title:
+                head.addWidget(label(title, "body"))
+            gram = (sense.get("gram") or "").strip()
+            if gram:
+                head.addWidget(label(gram, "faint"))
+            head.addStretch(1)
+            card.body().addLayout(head)
+
+            if kind == "collocations":
+                groups = sense.get("groups") or []
+                glimit = len(groups) if expanded else min(2, len(groups))
+                for group in groups[:glimit]:
+                    if group.get("label"):
+                        card.body().addWidget(label(group["label"], "faint"))
+                    items = group.get("items") or []
+                    ilimit = len(items) if expanded else min(3, len(items))
+                    for item in items[:ilimit]:
+                        card.body().addWidget(label("· " + item.get("text", ""), "body", wrap=True))
+                        if expanded and item.get("example"):
+                            card.body().addWidget(
+                                label("   " + item["example"], "example", wrap=True)
+                            )
+            else:
+                defn = (sense.get("def") or "").strip()
+                if defn:
+                    card.body().addWidget(label(defn, "en", wrap=True))
+                if expanded:
+                    for ex in sense.get("examples") or []:
+                        card.body().addWidget(label("• " + ex, "example", wrap=True))
+            card.body().addSpacing(4)
+
+        if expanded and data.get("etym"):
+            card.body().addSpacing(2)
+            card.body().addWidget(hline())
+            card.body().addWidget(label("词源", "faint"))
+            card.body().addWidget(label(data["etym"], "sub", wrap=True))
 
     def _update_status(self, res):
         parts = []
@@ -589,21 +642,28 @@ class SearchPage(QWidget):
 
         # User-provided local dictionary entries (never uploaded)
         if custom and self.view_source in ("all", "ecdict", "local"):
-            expand_btn = QPushButton("收起全文" if self._local_expanded else "展开全文")
-            expand_btn.setObjectName("chip")
-            expand_btn.setCursor(Qt.PointingHandCursor)
-            expand_btn.clicked.connect(self._toggle_local_expanded)
-            card = section_card("本地词典", extra=expand_btn)
+            card = section_card("本地词典", extra=label("每本可单独展开", "faint"))
             last_source = None
             first_entry = True
             for item in custom[:8]:
                 source = (item.get("source") or "本地词库").strip()
+                is_open = source in self._local_open
                 if source != last_source:
                     if not first_entry:
                         card.body().addSpacing(10)
                         card.body().addWidget(hline())
                         card.body().addSpacing(4)
-                    card.body().addWidget(label(source, "faint", wrap=True))
+                    source_row = QHBoxLayout()
+                    source_row.setSpacing(8)
+                    source_row.addWidget(label(source, "faint", wrap=True), 1)
+                    expand_btn = QPushButton("收起" if is_open else "展开")
+                    expand_btn.setObjectName("chip")
+                    expand_btn.setCursor(Qt.PointingHandCursor)
+                    expand_btn.clicked.connect(
+                        lambda _=False, s=source: self._toggle_local_source(s)
+                    )
+                    source_row.addWidget(expand_btn)
+                    card.body().addLayout(source_row)
                     last_source = source
                     first_entry = False
                 else:
@@ -615,19 +675,26 @@ class SearchPage(QWidget):
                 top.addWidget(label(item.get("word", ""), "body"))
                 if item.get("phonetic"):
                     top.addWidget(label("/%s/" % item["phonetic"].strip("/"), "phonetic"))
+                structured = custom_fmt.decode(item.get("definition", ""))
+                if structured and structured.get("pos"):
+                    top.addWidget(label(structured["pos"], "faint"))
                 top.addStretch(1)
                 card.body().addLayout(top)
+                if structured:
+                    self._render_structured(card, structured, is_open)
+                    card.body().addSpacing(6)
+                    continue
                 if item.get("translation"):
                     txt = (
                         self._custom_display_text(item["translation"])
-                        if self._local_expanded
+                        if is_open
                         else self._custom_preview(item["translation"], 3)
                     )
                     card.body().addWidget(label(txt, "def", wrap=True))
                 if item.get("definition"):
                     txt = (
                         self._custom_display_text(item["definition"])
-                        if self._local_expanded
+                        if is_open
                         else self._custom_preview(item["definition"], 5)
                     )
                     card.body().addWidget(label(txt, "en", wrap=True))
