@@ -283,7 +283,7 @@ class Application(QObject):
         # Selections inside our own window are allowed only in the result
         # area.  Selecting the search box, settings or sidebar must not pop
         # the marker.
-        if self.window.isVisible() and self.window.geometry().contains(point):
+        if self.window.isVisible() and self.window.isActiveWindow() and self.window.geometry().contains(point):
             page = self.window.search_page
             if not page.result_scroll.isVisible():
                 return
