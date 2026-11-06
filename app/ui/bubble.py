@@ -8,7 +8,7 @@ from PySide6.QtCore import (
 from PySide6.QtGui import QColor, QFont, QGuiApplication, QPainter, QPainterPath
 from PySide6.QtWidgets import (
     QFrame, QGraphicsDropShadowEffect, QHBoxLayout, QLabel, QPushButton,
-    QScrollArea, QVBoxLayout, QWidget,
+    QScrollArea, QVBoxLayout, QWidget, QLayout,
 )
 
 from . import icons
@@ -202,6 +202,7 @@ class Bubble(QWidget):
         self.detail_scroll.hide()
         self.expand_btn.setText("展开")
         self.setFixedWidth(344)
+        self._relayout_compact()
         self.apply_theme()
         self.adjustSize()
         screen = QGuiApplication.screenAt(pos) or QGuiApplication.primaryScreen()
@@ -261,12 +262,38 @@ class Bubble(QWidget):
         self.brief_lb.setText(brief or "")
         self.source_lb.setText((source[:72] + "…") if len(source) > 72 else (source or ""))
         self.source_lb.setVisible(bool(source))
+        self._relayout_compact()
+
+    def _relayout_compact(self):
+        # QLabel word-wrap height is computed lazily; activate the layouts
+        # before adjustSize(), otherwise a longer online result can overlap
+        # the source line and the bottom action row.
+        self.brief_lb.setFixedWidth(280)
+        self.brief_lb.adjustSize()
+        try:
+            self.card.layout().activate()
+            self.layout().activate()
+        except Exception:
+            pass
         self.adjustSize()
         self._clamp_to_screen()
 
     def set_details(self, text: str):
         text = (text or "").strip()
-        self.detail_lb.setText(text or "没有更多离线释义。")
+        # Keep the compact summary at the top of the same scrollable body so
+        # it moves together with the detailed content.
+        prefix = ""
+        if self.brief_lb.text():
+            prefix += (
+                '<p style="margin:0 0 4px 0">%s</p>'
+                % self.brief_lb.text().replace("&", "&amp;").replace("<", "&lt;")
+            )
+        if self.source_lb.text():
+            prefix += (
+                '<p style="margin:0 0 6px 0;color:#888">%s</p>'
+                % self.source_lb.text().replace("&", "&amp;").replace("<", "&lt;")
+            )
+        self.detail_lb.setText(prefix + (text or "没有更多离线释义。"))
         self._set_expanded(True)
         self._timer.stop()
 
@@ -274,7 +301,7 @@ class Bubble(QWidget):
         if not self._expanded or not text:
             return
         self.detail_lb.setText(self.detail_lb.text() + text)
-        self.detail_lb.setFixedWidth(390)
+        self.detail_lb.setFixedWidth(350)
         self.detail_lb.adjustSize()
         screen = QGuiApplication.screenAt(self.pos()) or QGuiApplication.primaryScreen()
         max_h = 420
@@ -287,11 +314,13 @@ class Bubble(QWidget):
 
     def _set_expanded(self, expanded: bool):
         self._expanded = bool(expanded)
+        self.brief_lb.setVisible(not self._expanded)
+        self.source_lb.setVisible(not self._expanded and bool(self.source_lb.text()))
         self.detail_scroll.setVisible(self._expanded)
         self.expand_btn.setText("收起" if self._expanded else "展开")
         self.setFixedWidth(420 if self._expanded else 344)
         if self._expanded:
-            self.detail_lb.setFixedWidth(390)
+            self.detail_lb.setFixedWidth(350)
             self.detail_lb.adjustSize()
             screen = QGuiApplication.screenAt(self.pos()) or QGuiApplication.primaryScreen()
             max_h = 420
@@ -299,6 +328,11 @@ class Bubble(QWidget):
                 max_h = min(420, int(screen.availableGeometry().height() * 0.55))
             content_h = self.detail_lb.sizeHint().height() + 8
             self.detail_scroll.setFixedHeight(max(80, min(content_h, max_h)))
+        try:
+            self.card.layout().activate()
+            self.layout().activate()
+        except Exception:
+            pass
         self.adjustSize()
         self._clamp_to_screen()
         if self._expanded:

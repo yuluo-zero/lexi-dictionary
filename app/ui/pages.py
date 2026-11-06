@@ -6,10 +6,10 @@ import os
 import re
 import time
 
-from PySide6.QtCore import QObject, QRectF, QRunnable, QSize, QStringListModel, Qt, QThreadPool, QTimer, Signal
-from PySide6.QtGui import QColor, QFont, QGuiApplication, QPainter
+from PySide6.QtCore import QEvent, QObject, QRectF, QRunnable, QSize, QStringListModel, Qt, QThreadPool, QTimer, Signal
+from PySide6.QtGui import QColor, QCursor, QFont, QGuiApplication, QKeySequence, QPainter, QShortcut
 from PySide6.QtWidgets import (
-    QButtonGroup, QCheckBox, QComboBox, QCompleter, QFileDialog, QFrame, QHBoxLayout, QLabel,
+    QApplication, QButtonGroup, QCheckBox, QComboBox, QCompleter, QFileDialog, QFrame, QHBoxLayout, QLabel,
     QLineEdit, QInputDialog, QMessageBox, QPushButton, QScrollArea, QSizePolicy, QVBoxLayout,
     QWidget,
 )
@@ -128,6 +128,9 @@ class SearchPage(QWidget):
         self.view_source = "all"
         self._local_open = set()
         self._example_open = set()
+        self._linked_offset = 0
+        self._syncing_scroll = False
+        self._back_stack = []
         self.fulltext_results = []
         self.ft_token = 0
         self.ft_signals = _FulltextSignals(self)
@@ -159,6 +162,12 @@ class SearchPage(QWidget):
         head.addWidget(self.title)
         head.addWidget(label("单词 · 短语 · 整句翻译", "faint"))
         head.addStretch(1)
+        self.back_btn = QPushButton("← 返回")
+        self.back_btn.setObjectName("chip")
+        self.back_btn.setCursor(Qt.PointingHandCursor)
+        self.back_btn.clicked.connect(self.go_back)
+        self.back_btn.hide()
+        head.addWidget(self.back_btn)
         self.mode_hint = label("中英互译 开 · 英英互译 开", "faint")
         head.addWidget(self.mode_hint)
         outer.addLayout(head)
@@ -195,21 +204,70 @@ class SearchPage(QWidget):
         )
         self.stack_layout.addWidget(self.empty, 1)
 
+        self.result_page = QWidget()
+        page_layout = QVBoxLayout(self.result_page)
+        page_layout.setContentsMargins(0, 0, 0, 0)
+        page_layout.setSpacing(10)
+        self.header_host = QWidget()
+        self.header_layout = QVBoxLayout(self.header_host)
+        self.header_layout.setContentsMargins(0, 4, 6, 0)
+        self.header_layout.setSpacing(8)
+        page_layout.addWidget(self.header_host)
+
+        self.result_area = QWidget()
+        result_row = QHBoxLayout(self.result_area)
+        result_row.setContentsMargins(0, 0, 0, 0)
+        result_row.setSpacing(14)
+
         self.result_scroll = QScrollArea()
         self.result_scroll.setWidgetResizable(True)
         self.result_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
-        self.result_scroll.hide()
         self.result_inner = QWidget()
         self.result_layout = QVBoxLayout(self.result_inner)
         self.result_layout.setContentsMargins(0, 4, 6, 20)
         self.result_layout.setSpacing(14)
         self.result_scroll.setWidget(self.result_inner)
-        self.stack_layout.addWidget(self.result_scroll, 1)
+        self.result_scroll.verticalScrollBar().valueChanged.connect(self._on_left_scroll)
+        result_row.addWidget(self.result_scroll, 1)
+
+        self.right_scroll = QScrollArea()
+        self.right_scroll.setWidgetResizable(True)
+        self.right_scroll.setFrameShape(QFrame.NoFrame)
+        self.right_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        self.right_scroll.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
+        self.right_scroll.setFixedWidth(300)
+        self.right_inner = QWidget()
+        self.right_layout = QVBoxLayout(self.right_inner)
+        self.right_layout.setContentsMargins(0, 4, 6, 20)
+        self.right_layout.setSpacing(14)
+        self.right_scroll.setWidget(self.right_inner)
+        self._apply_right_style()
+        self.right_scroll.hide()
+        result_row.addWidget(self.right_scroll, 0, Qt.AlignTop)
+        page_layout.addWidget(self.result_area, 1)
+        self.result_page.hide()
+        self.stack_layout.addWidget(self.result_page, 1)
+        self._back_shortcut = QShortcut(QKeySequence("Alt+Left"), self)
+        self._back_shortcut.activated.connect(self.go_back)
+        QApplication.instance().installEventFilter(self)
 
         self.status = label("", "faint")
         outer.addWidget(self.status)
 
     # ------------------------------------------------------------------ searching
+    def _apply_right_style(self):
+        transparent = bool(self.settings.get("right_transparent", True))
+        background = "transparent" if transparent else theme["surface"]
+        self.right_scroll.setStyleSheet(
+            f"QScrollArea{{background:{background};border:none;}}"
+            f"QScrollBar:vertical{{width:5px;background:transparent;margin:0;}}"
+            f"QScrollBar::handle:vertical{{background:{theme['border']};border-radius:2px;min-height:24px;}}"
+            f"QScrollBar::add-line:vertical,QScrollBar::sub-line:vertical{{height:0;}}"
+        )
+        self.right_inner.setStyleSheet(
+            "background:transparent;" if transparent else ""
+        )
+
     def focus_search(self):
         self.search_box.setFocus()
         self.search_box.selectAll()
@@ -229,7 +287,7 @@ class SearchPage(QWidget):
             self._completer_model.setStringList([])
             self.result = None
             self.online_data = None
-            self.result_scroll.hide()
+            self.result_page.hide()
             self.empty.show()
             self.chips_row.show()
             self.title.setText("查词")
@@ -245,10 +303,68 @@ class SearchPage(QWidget):
             self._completer.setCompletionPrefix(text)
             self._completer.complete()
 
-    def search(self, text: str, record: bool = True):
+    def eventFilter(self, obj, event):
+        if (
+            event.type() == QEvent.Wheel
+            and self.settings.get("linked_scroll", False)
+            and self.result_page.isVisible()
+            and self.right_scroll.isVisible()
+        ):
+            pos = QCursor.pos()
+            over_left = self.result_scroll.rect().contains(
+                self.result_scroll.mapFromGlobal(pos)
+            )
+            over_right = self.right_scroll.rect().contains(
+                self.right_scroll.mapFromGlobal(pos)
+            )
+            if over_left or over_right:
+                delta = event.angleDelta().y()
+                if delta:
+                    self._linked_wheel(delta)
+                    return True
+        return super().eventFilter(obj, event)
+
+    def _on_left_scroll(self, value: int):
+        if (
+            self._syncing_scroll
+            or not self.settings.get("linked_scroll", False)
+            or not self.right_scroll.isVisible()
+        ):
+            return
+        self._syncing_scroll = True
+        try:
+            self._linked_offset = value
+            right = self.right_scroll.verticalScrollBar()
+            right.setValue(min(value, right.maximum()))
+        finally:
+            self._syncing_scroll = False
+
+    def _linked_wheel(self, delta: int):
+        left = self.result_scroll.verticalScrollBar()
+        right = self.right_scroll.verticalScrollBar()
+        step = max(left.singleStep(), right.singleStep(), 20)
+        maximum = max(left.maximum(), right.maximum())
+        self._linked_offset = max(
+            0, min(maximum, self._linked_offset - int(delta / 120) * step * 3)
+        )
+        self._syncing_scroll = True
+        try:
+            left.setValue(min(self._linked_offset, left.maximum()))
+            right.setValue(min(self._linked_offset, right.maximum()))
+        finally:
+            self._syncing_scroll = False
+
+    def search(self, text: str, record: bool = True, push: bool = True):
         text = text.strip()
         if not text:
             return
+        if push and self.result:
+            current = (self.result.get("query") or "").strip()
+            if current and current.lower() != text.lower():
+                if not self._back_stack or self._back_stack[-1] != current:
+                    self._back_stack.append(current)
+                    self._back_stack = self._back_stack[-80:]
+        self._update_back()
         try:
             self._completer.popup().hide()
         except Exception:
@@ -257,9 +373,20 @@ class SearchPage(QWidget):
         self.view_source = "all"
         self.chips_row.hide()
         self.empty.hide()
-        self.result_scroll.show()
+        self.result_page.show()
         self.status.setText("正在查询…")
         self.app.engine.search(text)
+
+    def _update_back(self):
+        if hasattr(self, "back_btn"):
+            self.back_btn.setVisible(bool(self._back_stack))
+
+    def go_back(self):
+        if not self._back_stack:
+            return
+        target = self._back_stack.pop()
+        self._update_back()
+        self.search(target, record=False, push=False)
 
     def rerender(self):
         if self.result:
@@ -309,7 +436,10 @@ class SearchPage(QWidget):
 
     # ------------------------------------------------------------------ render
     def _clear(self):
+        clear_layout(self.header_layout)
         clear_layout(self.result_layout)
+        clear_layout(self.right_layout)
+        self.right_scroll.hide()
 
     def _render_fulltext(self):
         if not self.fulltext_results:
@@ -336,6 +466,7 @@ class SearchPage(QWidget):
             return
         bar = self.result_scroll.verticalScrollBar()
         pos = bar.value()
+        self._linked_offset = pos if keep_scroll else 0
         self._clear()
 
         if res.get("error"):
@@ -372,8 +503,17 @@ class SearchPage(QWidget):
         self._update_status(res)
 
     def _ordered_source_keys(self):
-        defaults = ["ecdict", "wordnet", "local", "collins", "youdao", "merriam"]
+        defaults = ["ecdict", "local", "wordnet", "collins", "youdao", "merriam"]
         raw = self.settings.get("source_order")
+        order = [k for k in (raw if isinstance(raw, list) else []) if k in defaults]
+        for key in defaults:
+            if key not in order:
+                order.append(key)
+        return order
+
+    def _ordered_right_keys(self):
+        defaults = ["phrs", "web", "forms", "synonyms", "frequency"]
+        raw = self.settings.get("right_order")
         order = [k for k in (raw if isinstance(raw, list) else []) if k in defaults]
         for key in defaults:
             if key not in order:
@@ -413,7 +553,7 @@ class SearchPage(QWidget):
             btn.clicked.connect(lambda _=False, k=key: self._set_view_source(k))
             row.addWidget(btn)
         row.addStretch(1)
-        self.result_layout.addWidget(holder)
+        self.header_layout.addWidget(holder)
 
     def _set_view_source(self, source: str):
         self.view_source = source
@@ -536,22 +676,30 @@ class SearchPage(QWidget):
                             if item.get("example")
                         ]
                         if examples:
-                            key = "%s|%s|%s|%s" % (source, si, gi, no)
-                            opened = key in self._example_open
-                            btn = QPushButton(
-                                "收起例句" if opened else "例句 %d 条" % len(examples)
-                            )
-                            btn.setObjectName("chip")
-                            btn.setCursor(Qt.PointingHandCursor)
-                            btn.clicked.connect(
-                                lambda _=False, k=key: self._toggle_examples(k)
-                            )
-                            card.body().addWidget(btn, 0, Qt.AlignLeft)
-                            if opened:
+                            if len(examples) <= 3:
+                                # A handful of examples reads better inline;
+                                # only hide when the list is long.
                                 for ex in examples:
                                     card.body().addWidget(
                                         label("• " + ex, "example", wrap=True)
                                     )
+                            else:
+                                key = "%s|%s|%s|%s" % (source, si, gi, no)
+                                opened = key in self._example_open
+                                btn = QPushButton(
+                                    "收起例句" if opened else "例句 %d 条" % len(examples)
+                                )
+                                btn.setObjectName("chip")
+                                btn.setCursor(Qt.PointingHandCursor)
+                                btn.clicked.connect(
+                                    lambda _=False, k=key: self._toggle_examples(k)
+                                )
+                                card.body().addWidget(btn, 0, Qt.AlignLeft)
+                                if opened:
+                                    for ex in examples:
+                                        card.body().addWidget(
+                                            label("• " + ex, "example", wrap=True)
+                                        )
             else:
                 defn = (sense.get("def") or "").strip()
                 if defn:
@@ -674,16 +822,16 @@ class SearchPage(QWidget):
             ))
         meta_row.addStretch(1)
         head.body().addLayout(meta_row)
-        self.result_layout.addWidget(head)
+        self.header_layout.addWidget(head)
 
         base = res.get("meta", {}).get("base")
         if base:
-            self.result_layout.addWidget(
+            self.header_layout.addWidget(
                 label("「%s」是「%s」的变化形式，已按原形显示。" % (res["query"], base), "faint")
             )
         lookup_variant = (online or {}).get("lookup_variant")
         if lookup_variant:
-            self.result_layout.addWidget(
+            self.header_layout.addWidget(
                 label("在线词典没有「%s」的词条，已按「%s」查询。" % (res["query"], lookup_variant), "faint")
             )
 
@@ -694,18 +842,28 @@ class SearchPage(QWidget):
                 name = (item.get("source") or "本地词库").strip()
                 if name not in names:
                     names.append(name)
-            self.result_layout.addWidget(
-                label("已加载本地词典：%s" % " / ".join(names), "faint")
+            self.header_layout.addWidget(
+                label("已加载本地词典：%s" % " / ".join(names), "faint", wrap=True)
             )
 
-        columns = QHBoxLayout()
-        columns.setSpacing(14)
-        left = QVBoxLayout()
+        linked = bool(self.settings.get("linked_scroll", False))
+        self.right_scroll.setVerticalScrollBarPolicy(
+            Qt.ScrollBarAlwaysOff if linked else Qt.ScrollBarAsNeeded
+        )
+        fixed_right = bool(self.settings.get("right_fixed", False)) or linked
+        if fixed_right:
+            left = self.result_layout
+            right = self.right_layout
+        else:
+            left = QVBoxLayout()
+            right = QVBoxLayout()
         left.setSpacing(14)
-        right = QVBoxLayout()
         right.setSpacing(14)
-        columns.addLayout(left, 1)
         cards = {}
+        right_cards = {}
+
+        def put_right(key, card):
+            right_cards.setdefault(key, []).append(card)
 
         def put(key, card):
             cards.setdefault(key, []).append(card)
@@ -834,7 +992,12 @@ class SearchPage(QWidget):
                         card.body().addLayout(row)
                     else:
                         card.body().addWidget(label(line, "def", wrap=True))
-                put("youdao", card)
+                put(
+                    "ecdict"
+                    if self.view_source == "all" and not show_offline_cn
+                    else "youdao",
+                    card,
+                )
 
         # English definitions: online first, offline WordNet fallback
         prefer_online = (
@@ -929,14 +1092,12 @@ class SearchPage(QWidget):
         # collocations / phrases
         if yd.get("phrs") and self.view_source in ("all", "youdao"):
             card = section_card("搭配", extra=label("在线 · 有道", "faint"))
-            for phr in yd["phrs"][:self._cap(8)]:
-                row = QHBoxLayout()
-                row.setSpacing(10)
-                row.addWidget(label(phr["en"], "en"), 1)
+            for phr in yd["phrs"][:self._cap(10)]:
+                card.body().addWidget(label(phr["en"], "en", wrap=True))
                 if phr.get("zh"):
-                    row.addWidget(label(phr["zh"], "sub"), 1)
-                card.body().addLayout(row)
-            put("youdao", card)
+                    card.body().addWidget(label(phr["zh"], "sub", wrap=True))
+                card.body().addSpacing(2)
+            put_right("phrs", card)
 
         # exam-style usage examples from Collins
         if self.settings.get("target_exam") and yd.get("exam_sents") and self.view_source in ("all", "youdao"):
@@ -959,7 +1120,7 @@ class SearchPage(QWidget):
                 for card in items:
                     left.addWidget(card)
 
-        if not cards:
+        if not cards and right.count() == 0:
             card = section_card("释义")
             card.body().addWidget(
                 label("离线词典里没有找到「%s」。" % res["query"], "sub", wrap=True)
@@ -983,7 +1144,7 @@ class SearchPage(QWidget):
             holder = QWidget()
             holder.setLayout(flow)
             card.body().addWidget(holder)
-            right.addWidget(card)
+            put_right("web", card)
 
         forms = entry.get("exchange") or []
         if forms:
@@ -1001,7 +1162,7 @@ class SearchPage(QWidget):
                 row.addWidget(b)
                 grid.addLayout(row)
             card.body().addLayout(grid)
-            right.addWidget(card)
+            put_right("forms", card)
 
         syns = self._synonyms(entry, res, online)
         if syns:
@@ -1012,7 +1173,7 @@ class SearchPage(QWidget):
             holder = QWidget()
             holder.setLayout(flow)
             card.body().addWidget(holder)
-            right.addWidget(card)
+            put_right("synonyms", card)
 
         if entry.get("frq") or entry.get("bnc"):
             card = section_card("词频")
@@ -1023,18 +1184,52 @@ class SearchPage(QWidget):
                     row.addStretch(1)
                     row.addWidget(label("#%d" % val, "sub"))
                     card.body().addLayout(row)
-            right.addWidget(card)
+            put_right("frequency", card)
 
-        if right.count():
-            holder = QWidget()
-            holder.setLayout(right)
-            holder.setFixedWidth(300)
-            holder.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Maximum)
-            columns.addWidget(holder, 0, Qt.AlignTop)
+        for key in self._ordered_right_keys():
+            for card in right_cards.get(key, []):
+                right.addWidget(card)
+        for key, items in right_cards.items():
+            if key not in self._ordered_right_keys():
+                for card in items:
+                    right.addWidget(card)
 
+        has_right = bool(right_cards)
         left.addStretch(1)
-        right.addStretch(1)
-        self.result_layout.addLayout(columns)
+        if fixed_right:
+            if has_right:
+                right.addStretch(1)
+            self.right_scroll.setVisible(has_right)
+        else:
+            self.right_scroll.hide()
+            if has_right:
+                holder = QWidget()
+                holder.setLayout(right)
+                holder.setFixedWidth(300)
+                holder.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Maximum)
+                columns = QHBoxLayout()
+                columns.setSpacing(14)
+                columns.addLayout(left, 1)
+                columns.addWidget(holder, 0, Qt.AlignTop)
+                self.result_layout.addLayout(columns)
+            else:
+                self.result_layout.addLayout(left)
+
+        if linked:
+            QTimer.singleShot(0, self._apply_linked_offset)
+
+    def _apply_linked_offset(self):
+        left = self.result_scroll.verticalScrollBar()
+        right = self.right_scroll.verticalScrollBar()
+        self._linked_offset = max(
+            0, min(self._linked_offset, max(left.maximum(), right.maximum()))
+        )
+        self._syncing_scroll = True
+        try:
+            left.setValue(min(self._linked_offset, left.maximum()))
+            right.setValue(min(self._linked_offset, right.maximum()))
+        finally:
+            self._syncing_scroll = False
 
     # ------------------------------------------------------------------ chinese
     def _render_chinese(self, res):
@@ -1059,7 +1254,7 @@ class SearchPage(QWidget):
         head.body().addLayout(top)
         if entries and entries[0]["trad"] != entries[0]["simp"]:
             head.body().addWidget(label("繁体：" + entries[0]["trad"], "faint"))
-        self.result_layout.addWidget(head)
+        self.header_layout.addWidget(head)
 
         if entries:
             card = section_card("英文释义")
@@ -1681,8 +1876,15 @@ class SettingsPage(QWidget):
             ("ecdict", "仅 ECDICT"),
             ("wordnet", "仅 WordNet"),
             ("youdao", "在线：有道"),
+            ("youdao_first", "在线优先：有道 → 无网回退 ECDICT"),
         ):
             bubble_src.addItem(name, code)
+        try:
+            for src in self.app.store.custom_sources():
+                name = src.get("source") or "本地词库"
+                bubble_src.addItem("本地 · " + name, "local:" + name)
+        except Exception:
+            pass
         bubble_src.setCurrentIndex(max(0, bubble_src.findData(
             self.s.get("bubble_source", "auto")
         )))
@@ -1690,8 +1892,8 @@ class SettingsPage(QWidget):
             lambda: self._set("bubble_source", bubble_src.currentData())
         )
         card.body().addWidget(SettingRow(
-            "小窗内容来源",
-            "紧凑小窗优先显示哪一本；展开后仍显示全部离线来源",
+            "紧凑小窗来源",
+            "只决定紧凑小窗优先显示哪一本；展开后的来源和顺序在下方单独设置",
             bubble_src,
         ))
         card.body().addWidget(hline())
@@ -1721,9 +1923,38 @@ class SettingsPage(QWidget):
         er.addStretch(1)
         card.body().addWidget(SettingRow(
             "小窗展开来源",
-            "只控制展开小窗；顺序跟随上面的「显示顺序」",
+            "只控制展开小窗；顺序在下面单独调整",
             expand_row,
         ))
+        card.body().addWidget(hline())
+        card.body().addWidget(label("小窗展开顺序", "faint"))
+        bubble_labels = {
+            "local": "本地词典",
+            "ecdict": "ECDICT",
+            "wordnet": "WordNet",
+            "youdao": "有道 · 在线",
+        }
+        bubble_defaults = ["local", "ecdict", "wordnet", "youdao"]
+        bubble_order = [k for k in (self.s.get("bubble_order") or []) if k in bubble_labels]
+        for k in bubble_defaults:
+            if k not in bubble_order:
+                bubble_order.append(k)
+        for key in bubble_order:
+            row_widget = QWidget()
+            bl = QHBoxLayout(row_widget)
+            bl.setContentsMargins(0, 0, 0, 0)
+            bl.setSpacing(6)
+            up = QPushButton("↑")
+            up.setObjectName("chip")
+            up.setFixedWidth(30)
+            up.clicked.connect(lambda _=False, k=key: self._move_bubble_order(k, -1))
+            bl.addWidget(up)
+            down = QPushButton("↓")
+            down.setObjectName("chip")
+            down.setFixedWidth(30)
+            down.clicked.connect(lambda _=False, k=key: self._move_bubble_order(k, 1))
+            bl.addWidget(down)
+            card.body().addWidget(SettingRow(bubble_labels[key], "", row_widget))
         lay.addWidget(card)
 
         # ---- 词典
@@ -1858,6 +2089,69 @@ class SettingsPage(QWidget):
             down.clicked.connect(lambda _=False, k=key: self._move_source_order(k, 1))
             rl.addWidget(down)
             order_card.body().addWidget(SettingRow(labels[key], "", row_widget))
+        order_card.body().addWidget(hline())
+        order_card.body().addWidget(SettingRow(
+            "右侧栏固定",
+            "开启后右侧辅助栏固定在右边；关闭后跟随整页一起滚动",
+            self._switch(
+                "right_fixed", order_card,
+                callback=lambda _v: self.app.window.search_page.rerender(),
+            ),
+        ))
+        order_card.body().addWidget(SettingRow(
+            "左右联动滚动",
+            "两边一起滚；一方到底后停住，另一方继续滚动；反向时同样",
+            self._switch(
+                "linked_scroll", order_card,
+                callback=lambda _v: self.app.window.search_page.rerender(),
+            ),
+        ))
+        order_card.body().addWidget(SettingRow(
+            "右侧栏透明画风",
+            "开启后右侧辅助栏使用透明背景；关闭后使用普通面板背景",
+            self._switch(
+                "right_transparent", order_card,
+                callback=lambda _v: (
+                    self.app.window.search_page._apply_right_style(),
+                    self.app.window.search_page.rerender(),
+                ),
+            ),
+        ))
+        order_card.body().addWidget(hline())
+        order_card.body().addWidget(label("右侧栏顺序", "faint"))
+        right_labels = {
+            "phrs": "有道搭配",
+            "web": "网络释义",
+            "forms": "词形变化",
+            "synonyms": "同义词",
+            "frequency": "词频",
+        }
+        right_defaults = ["phrs", "web", "forms", "synonyms", "frequency"]
+        right_keys = [k for k in (self.s.get("right_order") or []) if k in right_labels]
+        for k in right_defaults:
+            if k not in right_keys:
+                right_keys.append(k)
+        for key in right_keys:
+            row_widget = QWidget()
+            rl = QHBoxLayout(row_widget)
+            rl.setContentsMargins(0, 0, 0, 0)
+            rl.setSpacing(6)
+            up = QPushButton("↑")
+            up.setObjectName("chip")
+            up.setFixedWidth(30)
+            up.clicked.connect(lambda _=False, k=key: self._move_right_order(k, -1))
+            rl.addWidget(up)
+            down = QPushButton("↓")
+            down.setObjectName("chip")
+            down.setFixedWidth(30)
+            down.clicked.connect(lambda _=False, k=key: self._move_right_order(k, 1))
+            rl.addWidget(down)
+            order_card.body().addWidget(SettingRow(right_labels[key], "", row_widget))
+        order_card.body().addWidget(hline())
+        reset = QPushButton("恢复默认顺序")
+        reset.setObjectName("chip")
+        reset.clicked.connect(self._reset_source_order)
+        order_card.body().addWidget(reset, 0, Qt.AlignLeft)
         lay.addWidget(order_card)
 
         # ---- 本地词典
@@ -2281,8 +2575,49 @@ class SettingsPage(QWidget):
             selected.append(key)
         self._set("bubble_expand_sources", selected)
 
+    def _reset_source_order(self):
+        defaults = ["ecdict", "local", "wordnet", "collins", "youdao", "merriam"]
+        self._set("source_order", defaults)
+        self._set("right_order", ["phrs", "web", "forms", "synonyms", "frequency"])
+        self._set("bubble_order", ["local", "ecdict", "wordnet", "youdao"])
+        self.app.window.search_page.rerender()
+        QTimer.singleShot(0, self.app.window.refresh_settings)
+
+    def _move_bubble_order(self, key: str, delta: int):
+        defaults = ["local", "ecdict", "wordnet", "youdao"]
+        order = [k for k in (self.s.get("bubble_order") or []) if k in defaults]
+        for k in defaults:
+            if k not in order:
+                order.append(k)
+        if key not in order:
+            return
+        i = order.index(key)
+        j = max(0, min(len(order) - 1, i + delta))
+        if i == j:
+            return
+        order[i], order[j] = order[j], order[i]
+        self._set("bubble_order", order)
+        QTimer.singleShot(0, self.app.window.refresh_settings)
+
+    def _move_right_order(self, key: str, delta: int):
+        defaults = ["phrs", "web", "forms", "synonyms", "frequency"]
+        order = [k for k in (self.s.get("right_order") or []) if k in defaults]
+        for k in defaults:
+            if k not in order:
+                order.append(k)
+        if key not in order:
+            return
+        i = order.index(key)
+        j = max(0, min(len(order) - 1, i + delta))
+        if i == j:
+            return
+        order[i], order[j] = order[j], order[i]
+        self._set("right_order", order)
+        self.app.window.search_page.rerender()
+        QTimer.singleShot(0, self.app.window.refresh_settings)
+
     def _move_source_order(self, key: str, delta: int):
-        defaults = ["ecdict", "wordnet", "local", "collins", "youdao", "merriam"]
+        defaults = ["ecdict", "local", "wordnet", "collins", "youdao", "merriam"]
         order = [k for k in (self.s.get("source_order") or []) if k in defaults]
         for k in defaults:
             if k not in order:

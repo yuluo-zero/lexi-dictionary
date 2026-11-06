@@ -10,7 +10,7 @@ import threading
 
 APP_NAME = "划词词典"
 APP_EN = "Lexi"
-VERSION = "1.1.1"
+VERSION = "1.2.0"
 
 _lock = threading.RLock()
 
@@ -70,6 +70,7 @@ DEFAULTS = {
     "bubble_source": "auto",         # auto / local / ecdict / wordnet / youdao
     "bubble_online_fallback": False,
     "bubble_expand_sources": ["local", "ecdict", "wordnet"],
+    "bubble_order": ["local", "ecdict", "wordnet", "youdao"],
     "bubble_enabled": True,
     # dictionaries
     "cn_en": True,                  # 中英互译
@@ -79,7 +80,11 @@ DEFAULTS = {
     "online_first": True,           # 有网时优先用在线释义
     "full_content": False,          # 完整模式：不截断释义/例句
     "parallel_sources": False,      # 「全部」并列显示所有来源
-    "source_order": ["ecdict", "wordnet", "local", "collins", "youdao", "merriam"],
+    "source_order": ["ecdict", "local", "wordnet", "collins", "youdao", "merriam"],
+    "right_fixed": False,           # 右侧辅助栏固定，不跟随左侧滚动
+    "linked_scroll": False,         # 左右联动；一方到底后另一方继续
+    "right_transparent": True,      # 右侧栏透明画风
+    "right_order": ["phrs", "web", "forms", "synonyms", "frequency"],
     "fulltext_enabled": False,      # 全文搜索（默认关闭）
     "mw_collegiate_key": "",
     "mw_learners_key": "",

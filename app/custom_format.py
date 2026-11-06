@@ -172,17 +172,6 @@ def to_html(data: dict, expanded: bool = True) -> str:
                         '<p style="margin:1px 0">%s</p>'
                         % esc(" · ".join(texts))
                     )
-                if expanded:
-                    examples = [
-                        "%s — %s" % (item.get("text", ""), item["example"])
-                        for item in items
-                        if item.get("example")
-                    ][:3]
-                    if examples:
-                        parts.append(
-                            '<p style="margin:1px 0;color:#888">%s</p>'
-                            % esc("；".join(examples))
-                        )
         else:
             defn = (sense.get("def") or "").strip()
             if defn:

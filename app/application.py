@@ -66,7 +66,9 @@ class Application(QObject):
         self._last_selection = ""
         self._selection_at = 0.0
         self._bubble_source = ""
+        self._bubble_source_kind = ""
         self._bubble_pending_online = False
+        self._bubble_online_fallback = False
         self._bubble_seq = 0
         self._bubble_online_signals = _BubbleOnlineSignals()
         self._bubble_online_signals.done.connect(self._on_bubble_online)
@@ -329,7 +331,9 @@ class Application(QObject):
         phonetic = ""
         source = ""
         self._bubble_source = ""
+        self._bubble_source_kind = ""
         self._bubble_pending_online = False
+        self._bubble_online_fallback = False
         kind = classify(text)
         try:
             if kind == "en":
@@ -351,6 +355,16 @@ class Application(QObject):
             log.exception("bubble preview")
         if kind != "en":
             self._bubble_source = source
+        if "有道" in self._bubble_source:
+            self._bubble_source_kind = "youdao"
+        elif "ECDICT" in self._bubble_source:
+            self._bubble_source_kind = "ecdict"
+        elif "WordNet" in self._bubble_source:
+            self._bubble_source_kind = "wordnet"
+        elif self._bubble_source.startswith("本地"):
+            self._bubble_source_kind = "local"
+        else:
+            self._bubble_source_kind = ""
         self.marker.show_at(QPoint(x, y), text, text, phonetic, brief)
 
     def _bubble_payload(self, word: str):
@@ -395,7 +409,16 @@ class Application(QObject):
                 return None
             return word, "", wn[0].get("definition", "")[:180], "WordNet · 离线", False
 
-        if pref == "local":
+        if pref.startswith("local:"):
+            target = pref.split(":", 1)[1]
+            matches = [x for x in local if (x.get("source") or "") == target]
+            if matches:
+                chosen = local_payload(matches[0])
+            else:
+                chosen = ecdict_payload() or wordnet_payload()
+                if chosen:
+                    chosen = chosen[:4] + (False,)
+        elif pref == "local":
             chosen = local_payload(local[0]) if local else None
         elif pref == "ecdict":
             chosen = ecdict_payload()
@@ -407,6 +430,9 @@ class Application(QObject):
                 chosen = (word, "", "正在查询在线释义…", "有道 · 在线", True)
             else:
                 chosen = chosen[:4] + (True,)
+        elif pref == "youdao_first":
+            self._bubble_online_fallback = True
+            chosen = (word, "", "正在查询在线释义…", "有道 · 在线", True)
         else:  # auto: local -> ECDICT -> WordNet
             chosen = (
                 (local_payload(local[0]) if local else None)
@@ -416,6 +442,7 @@ class Application(QObject):
 
         if chosen is None:
             if self.settings.get("bubble_online_fallback", False):
+                self._bubble_online_fallback = True
                 return word, "", "正在查询在线释义…", "有道 · 在线", True
             return word, "", "本地词典未收录，点击查看详解", "", False
 
@@ -449,15 +476,40 @@ class Application(QObject):
     def _on_bubble_online(self, seq: int, word: str, data: dict):
         if seq != self._bubble_seq or self.bubble._word != word:
             return
-        if not data:
-            return
         brief = ""
-        if data.get("cn"):
-            brief = "；".join(data["cn"][:2])[:180]
-        if not brief and data.get("en"):
-            brief = data["en"][:180]
+        if data:
+            if data.get("cn"):
+                brief = "；".join(data["cn"][:2])[:180]
+            if not brief and data.get("en"):
+                brief = data["en"][:180]
         if brief:
+            self._bubble_online_fallback = False
+            self._bubble_source_kind = "youdao"
             self.bubble.update_brief(brief, "有道 · 在线")
+            return
+        if self._bubble_online_fallback:
+            self._bubble_online_fallback = False
+            self._bubble_offline_fallback(word)
+
+    def _bubble_offline_fallback(self, word: str):
+        brief = ""
+        source = ""
+        try:
+            entry, _ = self.lexicon.lookup_word(word)
+            if entry:
+                groups = entry.get("pos", {}).get("groups") or []
+                brief = groups[0][2] if groups else (entry.get("translation") or "").split("\n")[0]
+                source = "ECDICT · 离线（无网络）"
+            if not brief:
+                wn = self.lexicon.lookup_wordnet(word)
+                if wn:
+                    brief = wn[0].get("definition", "")
+                    source = "WordNet · 离线（无网络）"
+        except Exception:
+            pass
+        if brief:
+            self._bubble_source_kind = "ecdict" if source.startswith("ECDICT") else "wordnet"
+            self.bubble.update_brief(brief[:180], source)
 
     def _bubble_wordbook(self, word: str, phonetic: str, brief: str):
         word = (word or "").strip()
@@ -473,8 +525,17 @@ class Application(QObject):
         self.wordbook_changed.emit()
 
     def _ordered_source_keys(self):
-        defaults = ["ecdict", "wordnet", "local", "collins", "youdao", "merriam"]
+        defaults = ["ecdict", "local", "wordnet", "collins", "youdao", "merriam"]
         raw = self.settings.get("source_order")
+        order = [k for k in (raw if isinstance(raw, list) else []) if k in defaults]
+        for key in defaults:
+            if key not in order:
+                order.append(key)
+        return order
+
+    def _ordered_bubble_keys(self):
+        defaults = ["local", "ecdict", "wordnet", "youdao"]
+        raw = self.settings.get("bubble_order")
         order = [k for k in (raw if isinstance(raw, list) else []) if k in defaults]
         for key in defaults:
             if key not in order:
@@ -488,7 +549,11 @@ class Application(QObject):
         selected = self.settings.get("bubble_expand_sources")
         if not isinstance(selected, list):
             selected = ["local", "ecdict", "wordnet"]
-        keys = [k for k in self._ordered_source_keys() if k in selected]
+        keys = [k for k in self._ordered_bubble_keys() if k in selected]
+        # The compact card already shows one source; do not repeat that same
+        # source again in the expanded body.
+        if self._bubble_source_kind in ("youdao", "ecdict", "wordnet"):
+            keys = [k for k in keys if k != self._bubble_source_kind]
         blocks = {}
 
         if "local" in keys:
