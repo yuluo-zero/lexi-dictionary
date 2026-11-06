@@ -70,6 +70,10 @@ class Application(QObject):
         self._bubble_seq = 0
         self._bubble_online_signals = _BubbleOnlineSignals()
         self._bubble_online_signals.done.connect(self._on_bubble_online)
+        self._bubble_expand_seq = 0
+        self._bubble_expand_word = ""
+        self._bubble_expand_signals = _BubbleExpandSignals()
+        self._bubble_expand_signals.done.connect(self._on_bubble_expand)
         self._blocked_notice_at = 0.0
 
         self._tray = QSystemTrayIcon(_tray_icon(), self)
@@ -468,55 +472,108 @@ class Application(QObject):
         self.bubble.set_wordbook_state(in_wordbook)
         self.wordbook_changed.emit()
 
+    def _ordered_source_keys(self):
+        defaults = ["ecdict", "wordnet", "local", "collins", "youdao", "merriam"]
+        raw = self.settings.get("source_order")
+        order = [k for k in (raw if isinstance(raw, list) else []) if k in defaults]
+        for key in defaults:
+            if key not in order:
+                order.append(key)
+        return order
+
     def _expand_bubble(self, word: str):
         word = (word or "").strip()
         if not word:
             return
-        parts = []
-        try:
-            custom = self.store.custom_lookup(word)
-            for item in custom[:3]:
-                source = html.escape(item.get("source") or "本地")
-                parts.append(
-                    '<p style="margin:8px 0 2px 0;color:#777"><b>%s</b></p>' % source
-                )
-                data = custom_fmt.decode(item.get("definition", ""))
-                if data:
-                    parts.append(custom_fmt.to_html(data, expanded=True))
-                else:
-                    body = item.get("definition") or item.get("translation") or ""
-                    body = "\n".join(line for line in body.splitlines()[:12] if line.strip())
+        selected = self.settings.get("bubble_expand_sources")
+        if not isinstance(selected, list):
+            selected = ["local", "ecdict", "wordnet"]
+        keys = [k for k in self._ordered_source_keys() if k in selected]
+        blocks = {}
+
+        if "local" in keys:
+            parts = []
+            try:
+                for item in self.store.custom_lookup(word)[:8]:
+                    source = html.escape(item.get("source") or "本地")
                     parts.append(
-                        '<p style="margin:2px 0;white-space:pre-wrap">%s</p>'
-                        % html.escape(body[:1600])
+                        '<p style="margin:8px 0 2px 0;color:#777"><b>%s</b></p>' % source
                     )
-        except Exception:
-            pass
-        try:
-            entry, _meta = self.lexicon.lookup_word(word)
-            if entry:
-                lines = []
-                for _code, name, text in (entry.get("pos", {}).get("groups") or [])[:4]:
-                    lines.append("<b>%s</b> %s" % (html.escape(name), html.escape(text)))
-                if lines:
-                    parts.append(
-                        '<p style="margin:8px 0 2px 0;color:#777"><b>ECDICT</b></p>'
-                        '<p style="margin:2px 0">%s</p>' % "<br>".join(lines)
-                    )
-        except Exception:
-            pass
-        try:
-            wn = self.lexicon.lookup_wordnet(word)
-            if wn:
-                lines = [html.escape(item.get("definition", "")) for item in wn[:3] if item.get("definition")]
-                if lines:
-                    parts.append(
-                        '<p style="margin:8px 0 2px 0;color:#777"><b>WordNet</b></p>'
-                        '<p style="margin:2px 0">%s</p>' % "<br>".join(lines)
-                    )
-        except Exception:
-            pass
-        self.bubble.set_details("".join(parts) if parts else "没有更多离线释义。")
+                    data = custom_fmt.decode(item.get("definition", ""))
+                    if data:
+                        parts.append(custom_fmt.to_html(data, expanded=True))
+                    else:
+                        body = item.get("definition") or item.get("translation") or ""
+                        body = "\n".join(line for line in body.splitlines()[:12] if line.strip())
+                        parts.append(
+                            '<p style="margin:2px 0;white-space:pre-wrap">%s</p>'
+                            % html.escape(body[:1600])
+                        )
+            except Exception:
+                pass
+            if parts:
+                blocks["local"] = "".join(parts)
+
+        if "ecdict" in keys:
+            try:
+                entry, _meta = self.lexicon.lookup_word(word)
+                if entry:
+                    lines = []
+                    for _code, name, text in (entry.get("pos", {}).get("groups") or [])[:4]:
+                        lines.append("<b>%s</b> %s" % (html.escape(name), html.escape(text)))
+                    if lines:
+                        blocks["ecdict"] = (
+                            '<p style="margin:8px 0 2px 0;color:#777"><b>ECDICT</b></p>'
+                            '<p style="margin:2px 0">%s</p>' % "<br>".join(lines)
+                        )
+            except Exception:
+                pass
+
+        if "wordnet" in keys:
+            try:
+                wn = self.lexicon.lookup_wordnet(word)
+                if wn:
+                    lines = [
+                        html.escape(item.get("definition", ""))
+                        for item in wn[:3] if item.get("definition")
+                    ]
+                    if lines:
+                        blocks["wordnet"] = (
+                            '<p style="margin:8px 0 2px 0;color:#777"><b>WordNet</b></p>'
+                            '<p style="margin:2px 0">%s</p>' % "<br>".join(lines)
+                        )
+            except Exception:
+                pass
+
+        out = "".join(blocks[k] for k in keys if k in blocks)
+        if "youdao" in keys and not out:
+            out = '<p style="margin:8px 0;color:#777">有道 · 在线：查询中…</p>'
+        self.bubble.set_details(out or "没有更多离线释义。")
+
+        if "youdao" in keys:
+            self._bubble_expand_seq += 1
+            seq = self._bubble_expand_seq
+            self._bubble_expand_word = word
+            job = _BubbleExpandJob(word, seq, self._bubble_expand_signals)
+            QThreadPool.globalInstance().start(job)
+
+    def _on_bubble_expand(self, seq: int, word: str, data: dict):
+        if seq != self._bubble_expand_seq or word != self._bubble_expand_word:
+            return
+        if not data or not self.bubble.isVisible() or self.bubble._word != word:
+            return
+        brief = ""
+        if data.get("cn"):
+            brief = "；".join(data["cn"][:3])
+        elif data.get("en"):
+            brief = data["en"]
+        if not brief:
+            return
+        html_block = (
+            '<p style="margin:8px 0 2px 0;color:#777"><b>有道 · 在线</b></p>'
+            '<p style="margin:2px 0">%s</p>' % html.escape(brief[:1000])
+        )
+        self.bubble.append_details(html_block)
 
     def _on_key_pressed(self):
         if self.marker.isVisible():
@@ -753,6 +810,28 @@ class Application(QObject):
 
 
 # --------------------------------------------------------------------------- tts job
+class _BubbleExpandSignals(QObject):
+    done = Signal(int, str, dict)
+
+
+class _BubbleExpandJob(QRunnable):
+    def __init__(self, word: str, seq: int, signals: _BubbleExpandSignals):
+        super().__init__()
+        self.word = word
+        self.seq = seq
+        self.signals = signals
+
+    def run(self):
+        try:
+            data = online.youdao_lookup(self.word) or {}
+        except Exception:
+            data = {}
+        try:
+            self.signals.done.emit(self.seq, self.word, data)
+        except RuntimeError:
+            pass
+
+
 class _BubbleOnlineSignals(QObject):
     done = Signal(int, str, dict)
 

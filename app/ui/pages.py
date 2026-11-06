@@ -494,12 +494,20 @@ class SearchPage(QWidget):
         senses = data.get("senses") or []
         limit = len(senses) if expanded else min(3, len(senses))
         for sense in senses[:limit]:
+            no = (sense.get("no") or "").strip()
+            title = (sense.get("title") or "").strip()
+            if no and not title and kind != "collocations":
+                defn = (sense.get("def") or "").strip()
+                card.body().addWidget(label(no + "  " + defn, "en", wrap=True))
+                if expanded:
+                    for ex in sense.get("examples") or []:
+                        card.body().addWidget(label("• " + ex, "example", wrap=True))
+                card.body().addSpacing(4)
+                continue
             head = QHBoxLayout()
             head.setSpacing(8)
-            no = (sense.get("no") or "").strip()
             if no:
                 head.addWidget(label(no, "faint"))
-            title = (sense.get("title") or "").strip()
             if title:
                 head.addWidget(label(SearchPage._soft_case(title), "body"))
             gram = (sense.get("gram") or "").strip()
@@ -517,12 +525,19 @@ class SearchPage(QWidget):
                             label(SearchPage._category_label(group["label"]), "faint")
                         )
                     items = group.get("items") or []
-                    ilimit = len(items) if expanded else min(3, len(items))
-                    for item in items[:ilimit]:
-                        card.body().addWidget(label("· " + item.get("text", ""), "body", wrap=True))
-                        if expanded and item.get("example"):
+                    ilimit = len(items) if expanded else min(12, len(items))
+                    texts = [item.get("text", "") for item in items[:ilimit] if item.get("text")]
+                    if texts:
+                        card.body().addWidget(label(" · ".join(texts), "body", wrap=True))
+                    if expanded:
+                        examples = [
+                            "%s — %s" % (item.get("text", ""), item["example"])
+                            for item in items
+                            if item.get("example")
+                        ][:3]
+                        if examples:
                             card.body().addWidget(
-                                label("   " + item["example"], "example", wrap=True)
+                                label("；".join(examples), "example", wrap=True)
                             )
             else:
                 defn = (sense.get("def") or "").strip()
@@ -1664,6 +1679,30 @@ class SettingsPage(QWidget):
             "开启后，离线查不到时才请求有道；默认关闭，保证小窗秒开",
             self._switch("bubble_online_fallback", card),
         ))
+        card.body().addWidget(hline())
+        expand_row = QWidget()
+        er = QHBoxLayout(expand_row)
+        er.setContentsMargins(0, 0, 0, 0)
+        er.setSpacing(12)
+        selected = self.s.get("bubble_expand_sources")
+        if not isinstance(selected, list):
+            selected = ["local", "ecdict", "wordnet"]
+        for code, text in (
+            ("local", "本地词典"), ("ecdict", "ECDICT"),
+            ("wordnet", "WordNet"), ("youdao", "有道·在线"),
+        ):
+            cb = QCheckBox(text)
+            cb.setChecked(code in selected)
+            cb.stateChanged.connect(
+                lambda state, c=code: self._toggle_bubble_expand_source(c, bool(state))
+            )
+            er.addWidget(cb)
+        er.addStretch(1)
+        card.body().addWidget(SettingRow(
+            "小窗展开来源",
+            "只控制展开小窗；顺序跟随上面的「显示顺序」",
+            expand_row,
+        ))
         lay.addWidget(card)
 
         # ---- 词典
@@ -2205,6 +2244,15 @@ class SettingsPage(QWidget):
         else:
             text = "已替换：恢复 %d 个生词、%d 条历史记录。" % (counts["words"], counts["history"])
         QMessageBox.information(self, "恢复完成", text)
+
+    def _toggle_bubble_expand_source(self, key: str, enabled: bool):
+        selected = self.s.get("bubble_expand_sources")
+        if not isinstance(selected, list):
+            selected = ["local", "ecdict", "wordnet"]
+        selected = [k for k in selected if k != key]
+        if enabled:
+            selected.append(key)
+        self._set("bubble_expand_sources", selected)
 
     def _move_source_order(self, key: str, delta: int):
         defaults = ["ecdict", "wordnet", "local", "collins", "youdao", "merriam"]

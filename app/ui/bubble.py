@@ -80,6 +80,7 @@ class Bubble(QWidget):
         lay.addWidget(self.brief_lb)
 
         self.source_lb = label("", "faint", self.card)
+        self.source_lb.setWordWrap(True)
         self.source_lb.hide()
         lay.addWidget(self.source_lb)
 
@@ -194,7 +195,7 @@ class Bubble(QWidget):
         self.ph_lb.setVisible(bool(phonetic))
         self.brief_lb.setText(brief or "（本地词典未收录，查看在线释义）")
         self.brief_lb.setVisible(True)
-        self.source_lb.setText(source or "")
+        self.source_lb.setText((source[:72] + "…") if len(source) > 72 else (source or ""))
         self.source_lb.setVisible(bool(source))
         self._expanded = False
         self.detail_lb.clear()
@@ -258,7 +259,7 @@ class Bubble(QWidget):
 
     def update_brief(self, brief: str, source: str = ""):
         self.brief_lb.setText(brief or "")
-        self.source_lb.setText(source or "")
+        self.source_lb.setText((source[:72] + "…") if len(source) > 72 else (source or ""))
         self.source_lb.setVisible(bool(source))
         self.adjustSize()
         self._clamp_to_screen()
@@ -268,6 +269,21 @@ class Bubble(QWidget):
         self.detail_lb.setText(text or "没有更多离线释义。")
         self._set_expanded(True)
         self._timer.stop()
+
+    def append_details(self, text: str):
+        if not self._expanded or not text:
+            return
+        self.detail_lb.setText(self.detail_lb.text() + text)
+        self.detail_lb.setFixedWidth(390)
+        self.detail_lb.adjustSize()
+        screen = QGuiApplication.screenAt(self.pos()) or QGuiApplication.primaryScreen()
+        max_h = 420
+        if screen:
+            max_h = min(420, int(screen.availableGeometry().height() * 0.55))
+        content_h = self.detail_lb.sizeHint().height() + 8
+        self.detail_scroll.setFixedHeight(max(80, min(content_h, max_h)))
+        self.adjustSize()
+        self._clamp_to_screen()
 
     def _set_expanded(self, expanded: bool):
         self._expanded = bool(expanded)

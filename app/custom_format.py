@@ -165,11 +165,24 @@ def to_html(data: dict, expanded: bool = True) -> str:
                 label = category_label(group.get("label", ""))
                 if label:
                     parts.append('<p style="margin:4px 0 1px 0;color:#777">%s</p>' % esc(label))
-                for item in group.get("items") or []:
-                    parts.append('<p style="margin:1px 0">• %s' % esc(item.get("text", "")))
-                    if expanded and item.get("example"):
-                        parts.append('<br><span style="color:#888">%s</span>' % esc(item["example"]))
-                    parts.append("</p>")
+                items = group.get("items") or []
+                texts = [item.get("text", "") for item in items if item.get("text")]
+                if texts:
+                    parts.append(
+                        '<p style="margin:1px 0">%s</p>'
+                        % esc(" · ".join(texts))
+                    )
+                if expanded:
+                    examples = [
+                        "%s — %s" % (item.get("text", ""), item["example"])
+                        for item in items
+                        if item.get("example")
+                    ][:3]
+                    if examples:
+                        parts.append(
+                            '<p style="margin:1px 0;color:#888">%s</p>'
+                            % esc("；".join(examples))
+                        )
         else:
             defn = (sense.get("def") or "").strip()
             if defn:
@@ -261,12 +274,12 @@ def parse_longman(xmls, word: str) -> dict | None:
             index.append(title)
 
     parts = re.split(r"<Ë[^>]*i_(\d+)\.png[^>]*/>", body)
-    etym_raw = parts[0] if parts else ""
-    etym = _clean(etym_raw).strip()
-    if etym.startswith("[") and etym.endswith("]"):
-        etym = etym[1:-1].strip()
-    if not re.search(r"Date:|Origin:|Language:", etym, re.I):
-        etym = ""
+    etym = ""
+    em = re.search(
+        r"\[([^\[\]]*(?:Date|Origin|Language)[^\[\]]*)\]", body, re.S | re.I
+    )
+    if em:
+        etym = _clean(em.group(1)).strip(" :")
 
     senses = []
     for idx in range(1, len(parts), 2):
@@ -285,6 +298,7 @@ def parse_longman(xmls, word: str) -> dict | None:
         plain = _clean(block)
         plain = _remove_all(plain, examples + [title, gram])
         plain = re.sub(r"【\s*】", "", plain)
+        plain = re.sub(r"\[\s*\]", "", plain)
         plain = re.sub(r"^\s*[\]\)】]+\s*", "", plain)
         lines = [x.strip() for x in plain.splitlines() if x.strip()]
         defn = " ".join(lines)[:2600]
@@ -310,6 +324,7 @@ def parse_longman(xmls, word: str) -> dict | None:
         examples = [x for x in examples if x]
         plain = _clean(body)
         plain = _remove_all(plain, examples + [etym])
+        plain = re.sub(r"\[\s*\]", "", plain)
         lines = [
             line.strip() for line in plain.splitlines()
             if line.strip() and not re.match(r"^\d+【", line.strip())
