@@ -62,6 +62,11 @@ class Application(QObject):
         self.marker.activated.connect(self._open_bubble_from_marker)
         self._suppress_same = False
         self._last_selection = ""
+        self._bubble_source = ""
+        self._bubble_pending_online = False
+        self._bubble_seq = 0
+        self._bubble_online_signals = _BubbleOnlineSignals()
+        self._bubble_online_signals.done.connect(self._on_bubble_online)
         self._blocked_notice_at = 0.0
 
         self._tray = QSystemTrayIcon(_tray_icon(), self)
@@ -303,42 +308,132 @@ class Application(QObject):
             return
         brief = ""
         phonetic = ""
+        source = ""
+        self._bubble_source = ""
+        self._bubble_pending_online = False
         kind = classify(text)
         try:
             if kind == "en":
-                entry, _meta = self.lexicon.lookup_word(text)
-                if entry:
-                    phonetic = entry.get("phonetic", "")
-                    groups = entry.get("pos", {}).get("groups") or []
-                    if groups:
-                        brief = groups[0][2][:90]
-                    elif entry.get("translation"):
-                        brief = entry["translation"].split("\n")[0][:90]
-                    else:
-                        wn = self.lexicon.lookup_wordnet(text)
-                        if wn:
-                            brief = wn[0]["definition"][:90]
+                title, phonetic, brief, source, pending = self._bubble_payload(text)
+                self._bubble_source = source
+                self._bubble_pending_online = pending
             elif kind == "zh":
                 entries = self.lexicon.lookup_chinese(text)
                 if entries:
                     e = entries[0]
                     phonetic = e.get("pinyin", "")
                     brief = "；".join(e.get("glosses", [])[:2])[:90]
+                    source = "CC-CEDICT · 离线"
                 else:
                     brief = "点击查看英文翻译"
             else:
                 brief = "点击翻译整句"
         except Exception:
             log.exception("bubble preview")
+        if kind != "en":
+            self._bubble_source = source
         self.marker.show_at(QPoint(x, y), text, text, phonetic, brief)
+
+    def _bubble_payload(self, word: str):
+        """Return (title, phonetic, brief, source, needs_online)."""
+        pref = self.settings.get("bubble_source", "auto")
+        local = []
+        try:
+            local = self.store.custom_lookup(word)
+        except Exception:
+            local = []
+
+        def local_payload(item):
+            body = item.get("definition") or item.get("translation") or ""
+            lines = [line.strip() for line in body.splitlines() if line.strip()]
+            body = " ".join(lines[:3])[:180]
+            phon = item.get("phonetic") or ""
+            if not phon:
+                try:
+                    e, _ = self.lexicon.lookup_word(word)
+                    phon = (e or {}).get("phonetic", "")
+                except Exception:
+                    pass
+            src = "本地 · " + (item.get("source") or "词典")
+            return word, phon, body, src, False
+
+        def ecdict_payload():
+            entry, _ = self.lexicon.lookup_word(word)
+            if not entry:
+                return None
+            groups = entry.get("pos", {}).get("groups") or []
+            brief = groups[0][2] if groups else (entry.get("translation") or "").split("\n")[0]
+            return word, entry.get("phonetic", ""), brief[:180], "ECDICT · 离线", False
+
+        def wordnet_payload():
+            wn = self.lexicon.lookup_wordnet(word)
+            if not wn:
+                return None
+            return word, "", wn[0].get("definition", "")[:180], "WordNet · 离线", False
+
+        if pref == "local":
+            chosen = local_payload(local[0]) if local else None
+        elif pref == "ecdict":
+            chosen = ecdict_payload()
+        elif pref == "wordnet":
+            chosen = wordnet_payload()
+        elif pref == "youdao":
+            chosen = ecdict_payload() or (local_payload(local[0]) if local else None)
+            if chosen is None:
+                chosen = (word, "", "正在查询在线释义…", "有道 · 在线", True)
+            else:
+                chosen = chosen[:4] + (True,)
+        else:  # auto: local -> ECDICT -> WordNet
+            chosen = (
+                (local_payload(local[0]) if local else None)
+                or ecdict_payload()
+                or wordnet_payload()
+            )
+
+        if chosen is None:
+            if self.settings.get("bubble_online_fallback", False):
+                return word, "", "正在查询在线释义…", "有道 · 在线", True
+            return word, "", "本地词典未收录，点击查看详解", "", False
+
+        # For a fixed online preference, keep the offline preview but fetch
+        # the online definition in the background.
+        if pref == "youdao":
+            return chosen
+        if self.settings.get("bubble_online_fallback", False):
+            # Only fall back online when there is no offline hit.
+            return chosen
+        return chosen
 
     def _open_bubble_from_marker(self):
         m = self.marker
         if not m.query:
             return
-        self.bubble.show_for(m.query, m.title, m.phonetic, m.brief, m.pos())
+        self.bubble.show_for(
+            m.query, m.title, m.phonetic, m.brief, m.pos(), source=self._bubble_source
+        )
         self.bubble.set_wordbook_state(self.store.has_word(m.query))
+        if self._bubble_pending_online:
+            self._start_bubble_online(m.query)
         m.hide_marker()
+
+    def _start_bubble_online(self, word: str):
+        self._bubble_seq += 1
+        seq = self._bubble_seq
+        job = _BubbleOnlineJob(word, seq, self._bubble_online_signals)
+        QThreadPool.globalInstance().start(job)
+
+    def _on_bubble_online(self, seq: int, word: str, data: dict):
+        if seq != self._bubble_seq or self.bubble._word != word:
+            return
+        if not data:
+            return
+        brief = ""
+        if data.get("cn"):
+            brief = "；".join(data["cn"][:2])[:180]
+        if not brief and data.get("en"):
+            brief = data["en"][:180]
+        if brief:
+            self.bubble.update_brief(brief, "有道 · 在线")
 
     def _bubble_wordbook(self, word: str, phonetic: str, brief: str):
         word = (word or "").strip()
@@ -613,6 +708,28 @@ class Application(QObject):
 
 
 # --------------------------------------------------------------------------- tts job
+class _BubbleOnlineSignals(QObject):
+    done = Signal(int, str, dict)
+
+
+class _BubbleOnlineJob(QRunnable):
+    def __init__(self, word: str, seq: int, signals: _BubbleOnlineSignals):
+        super().__init__()
+        self.word = word
+        self.seq = seq
+        self.signals = signals
+
+    def run(self):
+        try:
+            data = online.youdao_lookup(self.word) or {}
+        except Exception:
+            data = {}
+        try:
+            self.signals.done.emit(self.seq, self.word, data)
+        except RuntimeError:
+            pass
+
+
 class _TTSSignals(QObject):
     done = Signal(str, str)
 

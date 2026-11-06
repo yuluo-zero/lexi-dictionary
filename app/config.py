@@ -67,6 +67,8 @@ DEFAULTS = {
     "restore_clipboard": True,
     "selection_in_terminals": False,
     "bubble_timeout_s": 8,
+    "bubble_source": "auto",         # auto / local / ecdict / wordnet / youdao
+    "bubble_online_fallback": False,
     "bubble_enabled": True,
     # dictionaries
     "cn_en": True,                  # 中英互译

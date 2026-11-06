@@ -1535,6 +1535,33 @@ class SettingsPage(QWidget):
         combo.setCurrentIndex(max(0, combo.findData(self.s.get("bubble_timeout_s", 8))))
         combo.currentIndexChanged.connect(lambda: self._set("bubble_timeout_s", combo.currentData()))
         card.body().addWidget(SettingRow("气泡停留时间", "鼠标移开后气泡自动消失的时间", combo))
+        card.body().addWidget(hline())
+        bubble_src = QComboBox()
+        for code, name in (
+            ("auto", "自动：本地 → ECDICT → WordNet"),
+            ("local", "仅本地词典"),
+            ("ecdict", "仅 ECDICT"),
+            ("wordnet", "仅 WordNet"),
+            ("youdao", "在线：有道"),
+        ):
+            bubble_src.addItem(name, code)
+        bubble_src.setCurrentIndex(max(0, bubble_src.findData(
+            self.s.get("bubble_source", "auto")
+        )))
+        bubble_src.currentIndexChanged.connect(
+            lambda: self._set("bubble_source", bubble_src.currentData())
+        )
+        card.body().addWidget(SettingRow(
+            "小窗内容来源",
+            "紧凑小窗优先显示哪一本；展开后仍显示全部离线来源",
+            bubble_src,
+        ))
+        card.body().addWidget(hline())
+        card.body().addWidget(SettingRow(
+            "本地无结果时在线补全",
+            "开启后，离线查不到时才请求有道；默认关闭，保证小窗秒开",
+            self._switch("bubble_online_fallback", card),
+        ))
         lay.addWidget(card)
 
         # ---- 词典

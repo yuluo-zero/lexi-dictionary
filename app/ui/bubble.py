@@ -78,6 +78,10 @@ class Bubble(QWidget):
         self.brief_lb.setStyleSheet(f"color:{theme['sub']}; font-size:13px;")
         lay.addWidget(self.brief_lb)
 
+        self.source_lb = label("", "faint", self.card)
+        self.source_lb.hide()
+        lay.addWidget(self.source_lb)
+
         self.detail_lb = QLabel(self.card)
         self.detail_lb.setWordWrap(True)
         self.detail_lb.setTextInteractionFlags(Qt.TextSelectableByMouse)
@@ -162,7 +166,8 @@ class Bubble(QWidget):
         self.open_btn.setStyleSheet(f"color:{theme['accent']}; font-size:12px; font-weight:600;")
         self.speak_btn.refresh()
 
-    def show_for(self, query: str, title: str, phonetic: str, brief: str, pos: QPoint):
+    def show_for(self, query: str, title: str, phonetic: str, brief: str, pos: QPoint,
+                 source: str = ""):
         self._word = query
         self.word_lb.setText(title)
         f = QFont("Microsoft YaHei UI" if any("\u4e00" <= ch <= "\u9fff" for ch in title) else "Georgia", 15)
@@ -172,6 +177,8 @@ class Bubble(QWidget):
         self.ph_lb.setVisible(bool(phonetic))
         self.brief_lb.setText(brief or "（本地词典未收录，查看在线释义）")
         self.brief_lb.setVisible(True)
+        self.source_lb.setText(source or "")
+        self.source_lb.setVisible(bool(source))
         self._expanded = False
         self.detail_lb.clear()
         self.detail_lb.hide()
@@ -231,6 +238,13 @@ class Bubble(QWidget):
 
     def set_wordbook_state(self, in_wordbook: bool):
         self.book_btn.setText("✓ 已在生词本" if in_wordbook else "＋ 生词本")
+
+    def update_brief(self, brief: str, source: str = ""):
+        self.brief_lb.setText(brief or "")
+        self.source_lb.setText(source or "")
+        self.source_lb.setVisible(bool(source))
+        self.adjustSize()
+        self._clamp_to_screen()
 
     def set_details(self, text: str):
         text = (text or "").strip()
