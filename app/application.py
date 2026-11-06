@@ -100,6 +100,8 @@ class Application(QObject):
 
         self.bubble.lookup_requested.connect(self.lookup_word)
         self.bubble.speak_requested.connect(lambda w: self.speak(w, self.settings.get("tts_accent", "us")))
+        self.bubble.wordbook_requested.connect(self._bubble_wordbook)
+        self.bubble.expand_requested.connect(self._expand_bubble)
 
         self.ball.clicked.connect(self._toggle_quick)
         self.quick.submitted.connect(self.lookup_word)
@@ -335,7 +337,55 @@ class Application(QObject):
         if not m.query:
             return
         self.bubble.show_for(m.query, m.title, m.phonetic, m.brief, m.pos())
+        self.bubble.set_wordbook_state(self.store.has_word(m.query))
         m.hide_marker()
+
+    def _bubble_wordbook(self, word: str, phonetic: str, brief: str):
+        word = (word or "").strip()
+        if not word:
+            return
+        if self.store.has_word(word):
+            self.store.remove_word(word)
+            in_wordbook = False
+        else:
+            self.store.add_word(word, phonetic, brief)
+            in_wordbook = True
+        self.bubble.set_wordbook_state(in_wordbook)
+        self.wordbook_changed.emit()
+
+    def _expand_bubble(self, word: str):
+        word = (word or "").strip()
+        if not word:
+            return
+        parts = []
+        try:
+            custom = self.store.custom_lookup(word)
+            for item in custom[:3]:
+                body = item.get("definition") or item.get("translation") or ""
+                body = "\n".join(line for line in body.splitlines()[:10] if line.strip())
+                if body:
+                    parts.append("【%s】\n%s" % (item.get("source", "本地"), body[:1200]))
+        except Exception:
+            pass
+        try:
+            entry, _meta = self.lexicon.lookup_word(word)
+            if entry:
+                lines = []
+                for _code, name, text in (entry.get("pos", {}).get("groups") or [])[:4]:
+                    lines.append("%s  %s" % (name, text))
+                if lines:
+                    parts.append("【ECDICT】\n" + "\n".join(lines)[:1600])
+        except Exception:
+            pass
+        try:
+            wn = self.lexicon.lookup_wordnet(word)
+            if wn:
+                lines = [item.get("definition", "") for item in wn[:3] if item.get("definition")]
+                if lines:
+                    parts.append("【WordNet】\n" + "\n".join(lines)[:1600])
+        except Exception:
+            pass
+        self.bubble.set_details("\n\n".join(parts) if parts else "没有更多离线释义。")
 
     def _on_key_pressed(self):
         if self.marker.isVisible():

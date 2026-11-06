@@ -7,7 +7,7 @@ from PySide6.QtCore import (
 )
 from PySide6.QtGui import QColor, QFont, QGuiApplication, QPainter, QPainterPath
 from PySide6.QtWidgets import (
-    QFrame, QGraphicsDropShadowEffect, QHBoxLayout, QLabel, QVBoxLayout, QWidget,
+    QFrame, QGraphicsDropShadowEffect, QHBoxLayout, QLabel, QPushButton, QVBoxLayout, QWidget,
 )
 
 from . import icons
@@ -18,6 +18,8 @@ from .widgets import IconButton, label
 class Bubble(QWidget):
     lookup_requested = Signal(str)
     speak_requested = Signal(str)
+    wordbook_requested = Signal(str, str, str)
+    expand_requested = Signal(str)
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -76,6 +78,13 @@ class Bubble(QWidget):
         self.brief_lb.setStyleSheet(f"color:{theme['sub']}; font-size:13px;")
         lay.addWidget(self.brief_lb)
 
+        self.detail_lb = QLabel(self.card)
+        self.detail_lb.setWordWrap(True)
+        self.detail_lb.setTextInteractionFlags(Qt.TextSelectableByMouse)
+        self.detail_lb.setStyleSheet(f"color:{theme['sub']}; font-size:12px;")
+        self.detail_lb.hide()
+        lay.addWidget(self.detail_lb)
+
         divider = QFrame(self.card)
         divider.setFixedHeight(1)
         divider.setStyleSheet(f"background:{theme['border']};")
@@ -83,8 +92,16 @@ class Bubble(QWidget):
 
         bottom = QHBoxLayout()
         bottom.setSpacing(6)
-        self.hint = label("点击查看详解 · 自动关闭", "faint", self.card)
-        bottom.addWidget(self.hint)
+        self.book_btn = QPushButton("＋ 生词本", self.card)
+        self.book_btn.setObjectName("chip")
+        self.book_btn.setCursor(Qt.PointingHandCursor)
+        self.book_btn.clicked.connect(self._wordbook_clicked)
+        bottom.addWidget(self.book_btn)
+        self.expand_btn = QPushButton("展开", self.card)
+        self.expand_btn.setObjectName("chip")
+        self.expand_btn.setCursor(Qt.PointingHandCursor)
+        self.expand_btn.clicked.connect(self._expand_clicked)
+        bottom.addWidget(self.expand_btn)
         bottom.addStretch(1)
         self.open_btn = QLabel("查看详解  ›", self.card)
         self.open_btn.setCursor(Qt.PointingHandCursor)
@@ -96,6 +113,7 @@ class Bubble(QWidget):
         lay.addLayout(bottom)
 
         self._word = ""
+        self._expanded = False
         self._timer = QTimer(self)
         self._timer.setSingleShot(True)
         self._timer.timeout.connect(self.hide_animated)
@@ -105,7 +123,7 @@ class Bubble(QWidget):
         self._drag_pos: QPoint | None = None
         self._drag_moved = False
         self.card.setCursor(Qt.OpenHandCursor)
-        for w in (self.card, self.word_lb, self.ph_lb, self.brief_lb, self.hint):
+        for w in (self.card, self.word_lb, self.ph_lb, self.brief_lb, self.detail_lb):
             w.installEventFilter(self)
 
     # ------------------------------------------------------------------ drag
@@ -154,6 +172,11 @@ class Bubble(QWidget):
         self.ph_lb.setVisible(bool(phonetic))
         self.brief_lb.setText(brief or "（本地词典未收录，查看在线释义）")
         self.brief_lb.setVisible(True)
+        self._expanded = False
+        self.detail_lb.clear()
+        self.detail_lb.hide()
+        self.expand_btn.setText("展开")
+        self.setFixedWidth(344)
         self.apply_theme()
         self.adjustSize()
         screen = QGuiApplication.screenAt(pos) or QGuiApplication.primaryScreen()
@@ -196,12 +219,54 @@ class Bubble(QWidget):
         if self._word:
             self.speak_requested.emit(self._word)
 
+    def _wordbook_clicked(self):
+        if self._word:
+            self.wordbook_requested.emit(self._word, self.ph_lb.text(), self.brief_lb.text())
+
+    def _expand_clicked(self):
+        if self._expanded:
+            self._set_expanded(False)
+        elif self._word:
+            self.expand_requested.emit(self._word)
+
+    def set_wordbook_state(self, in_wordbook: bool):
+        self.book_btn.setText("✓ 已在生词本" if in_wordbook else "＋ 生词本")
+
+    def set_details(self, text: str):
+        text = (text or "").strip()
+        self.detail_lb.setText(text or "没有更多离线释义。")
+        self._set_expanded(True)
+        self._timer.stop()
+
+    def _set_expanded(self, expanded: bool):
+        self._expanded = bool(expanded)
+        self.detail_lb.setVisible(self._expanded)
+        self.expand_btn.setText("收起" if self._expanded else "展开")
+        self.setFixedWidth(440 if self._expanded else 344)
+        self.adjustSize()
+        self._clamp_to_screen()
+        if self._expanded:
+            self._timer.stop()
+        elif self.isVisible():
+            self._timer.start(int(settings_timeout() * 1000))
+
+    def _clamp_to_screen(self):
+        screen = QGuiApplication.screenAt(self.pos()) or QGuiApplication.primaryScreen()
+        if not screen:
+            return
+        area = screen.availableGeometry()
+        w, h = self.width(), self.height()
+        x = max(area.left() + 8, min(self.x(), area.right() - w - 8))
+        y = max(area.top() + 8, min(self.y(), area.bottom() - h - 8))
+        self.move(x, y)
+
     def enterEvent(self, e):
         self._timer.stop()
         super().enterEvent(e)
 
     def leaveEvent(self, e):
-        self._timer.start(2600)
+        if not self._expanded:
+            self._timer.start(2600)
         super().leaveEvent(e)
 
     def hide_animated(self):
