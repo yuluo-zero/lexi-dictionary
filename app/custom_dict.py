@@ -26,7 +26,8 @@ def _pick(row: dict, keys) -> str:
     return ""
 
 
-def _normalise(word: str, phonetic: str, translation: str, definition: str) -> dict | None:
+def _normalise(word: str, phonetic: str, translation: str, definition: str,
+               source: str = "") -> dict | None:
     word = (word or "").strip()
     translation = (translation or "").strip()
     definition = (definition or "").strip()
@@ -39,6 +40,7 @@ def _normalise(word: str, phonetic: str, translation: str, definition: str) -> d
         "phonetic": (phonetic or "").strip()[:80],
         "translation": translation[:4000],
         "definition": definition[:8000],
+        "source": (source or "").strip()[:120],
     }
 
 
@@ -52,6 +54,7 @@ def _from_rows(rows) -> list[dict]:
             _pick(row, _PHON_KEYS),
             _pick(row, _TRANS_KEYS),
             _pick(row, _DEF_KEYS),
+            str(row.get("source") or "").strip(),
         )
         if item:
             out.append(item)
@@ -84,6 +87,9 @@ def _parse_json(path: str) -> list[dict]:
     if isinstance(data, list):
         return _from_rows(data)
     if isinstance(data, dict):
+        # Own export format: {"custom": [{...}, ...]}
+        if isinstance(data.get("custom"), list):
+            return _from_rows(data["custom"])
         # Either one entry, or {"word": "translation", ...}
         if any(k in data for k in _WORD_KEYS):
             return _from_rows([data])

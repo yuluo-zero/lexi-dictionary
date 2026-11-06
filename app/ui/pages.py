@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import re
 import time
 
 from PySide6.QtCore import QObject, QRectF, QRunnable, QSize, Qt, QThreadPool, QTimer, Signal
@@ -118,6 +119,7 @@ class SearchPage(QWidget):
         self.result = None
         self.online_data = None
         self.view_source = "all"
+        self._local_expanded = False
         self.fulltext_results = []
         self.ft_token = 0
         self.ft_signals = _FulltextSignals(self)
@@ -369,6 +371,25 @@ class SearchPage(QWidget):
         self.view_source = source
         self._render(keep_scroll=True)
 
+    def _toggle_local_expanded(self):
+        self._local_expanded = not self._local_expanded
+        self._render(keep_scroll=True)
+
+    @staticmethod
+    def _custom_display_text(text: str) -> str:
+        out = []
+        for raw in (text or "").splitlines():
+            s = raw.strip()
+            if not s:
+                continue
+            s = s.replace(" | ", "; ")
+            s = re.sub(r"^[>?☞\s]+", "", s)
+            if "·" in s and re.match(r"^[A-Za-z]+·", s):
+                s = re.sub(r"^[A-Za-z]+·[A-Za-z·0-9]*\s*", "", s)
+            if s:
+                out.append(s)
+        return "\n".join(out)
+
     def _update_status(self, res):
         parts = []
         if res.get("entry"):
@@ -503,7 +524,11 @@ class SearchPage(QWidget):
 
         # User-provided local dictionary entries (never uploaded)
         if custom and self.view_source in ("all", "ecdict", "local"):
-            card = section_card("本地词典", extra=label("仅本机", "faint"))
+            expand_btn = QPushButton("收起全文" if self._local_expanded else "展开全文")
+            expand_btn.setObjectName("chip")
+            expand_btn.setCursor(Qt.PointingHandCursor)
+            expand_btn.clicked.connect(self._toggle_local_expanded)
+            card = section_card("本地词典", extra=expand_btn)
             last_source = None
             first_entry = True
             for item in custom[:8]:
@@ -528,9 +553,19 @@ class SearchPage(QWidget):
                 top.addStretch(1)
                 card.body().addLayout(top)
                 if item.get("translation"):
-                    card.body().addWidget(label(item["translation"], "def", wrap=True))
+                    txt = self._custom_display_text(item["translation"])
+                    if not self._local_expanded and len(txt) > 1400:
+                        txt = txt[:1400].rstrip() + "\n…"
+                    card.body().addWidget(label(txt, "def", wrap=True))
                 if item.get("definition"):
-                    card.body().addWidget(label(item["definition"], "en", wrap=True))
+                    txt = self._custom_display_text(item["definition"])
+                    if not self._local_expanded:
+                        lines = txt.splitlines()
+                        if len(lines) > 12:
+                            txt = "\n".join(lines[:12]).rstrip() + "\n…"
+                        if len(txt) > 1400:
+                            txt = txt[:1400].rstrip() + "\n…"
+                    card.body().addWidget(label(txt, "en", wrap=True))
                 card.body().addSpacing(6)
             left.addWidget(card)
 
@@ -1540,6 +1575,10 @@ class SettingsPage(QWidget):
         import_btn.setObjectName("primary")
         import_btn.clicked.connect(self._import_custom)
         cr.addWidget(import_btn)
+        export_btn = QPushButton("导出本地词典")
+        export_btn.setObjectName("chip")
+        export_btn.clicked.connect(self._export_custom)
+        cr.addWidget(export_btn)
         clear_btn = QPushButton("清空本地词典")
         clear_btn.setObjectName("chip")
         clear_btn.clicked.connect(self._clear_custom)
@@ -1755,6 +1794,28 @@ class SettingsPage(QWidget):
             "已导入 %d 条词条，只保存在本机。\n文件：%s" % (n, os.path.basename(path)),
         )
         QTimer.singleShot(0, self.app.window.refresh_settings)
+
+    def _export_custom(self):
+        default = os.path.join(
+            os.path.dirname(self.app.store.path),
+            "local-dict-" + time.strftime("%Y%m%d-%H%M%S") + ".json",
+        )
+        path, _ = QFileDialog.getSaveFileName(
+            self, "导出本地词典", default, "JSON (*.json);;所有文件 (*)"
+        )
+        if not path:
+            return
+        try:
+            n = self.app.store.export_custom(path)
+        except Exception as exc:
+            QMessageBox.warning(self, "导出失败", str(exc))
+            return
+        QMessageBox.information(
+            self,
+            "导出完成",
+            "已导出 %d 条本地词条到：\n%s\n\n"
+            "文件可能包含商业词典内容，请只在本机使用，不要上传。" % (n, path),
+        )
 
     def _clear_custom(self):
         try:

@@ -1,4 +1,4 @@
-﻿# -*- coding: utf-8 -*-
+# -*- coding: utf-8 -*-
 """User data: history, wordbook and settings helpers."""
 from __future__ import annotations
 
@@ -187,13 +187,14 @@ class Store:
             definition = str(item.get("definition") or "").strip()
             if not word or not (translation or definition):
                 continue
+            item_source = str(item.get("source") or "").strip() or source
             rows.append((
                 word,
                 word.lower(),
                 str(item.get("phonetic") or "").strip()[:80],
                 translation[:4000],
                 definition[:12000],
-                source,
+                item_source[:120],
                 now,
             ))
         if not rows:
@@ -237,6 +238,22 @@ class Store:
     def custom_count(self) -> int:
         with self._lock:
             return int(self.con.execute("SELECT count(1) FROM custom_dict").fetchone()[0])
+
+    def export_custom(self, path: str) -> int:
+        with self._lock:
+            rows = self.con.execute(
+                "SELECT word, phonetic, translation, definition, source, enabled "
+                "FROM custom_dict ORDER BY source, word"
+            ).fetchall()
+        payload = {
+            "app": "LexiDictionary",
+            "version": 1,
+            "exported": int(time.time()),
+            "custom": [dict(r) for r in rows],
+        }
+        with open(path, "w", encoding="utf-8") as f:
+            json.dump(payload, f, ensure_ascii=False, indent=1)
+        return len(rows)
 
     def clear_custom(self) -> int:
         with self._lock:
