@@ -399,7 +399,7 @@ class SearchPage(QWidget):
 
     def _toggle_local_expanded(self):
         self._local_expanded = not self._local_expanded
-        self._render(keep_scroll=True)
+        self._render(keep_scroll=False)
 
     @staticmethod
     def _custom_display_text(text: str) -> str:
@@ -580,17 +580,17 @@ class SearchPage(QWidget):
                 card.body().addLayout(top)
                 if item.get("translation"):
                     txt = self._custom_display_text(item["translation"])
-                    if not self._local_expanded and len(txt) > 1400:
-                        txt = txt[:1400].rstrip() + "\n…"
+                    if not self._local_expanded and len(txt) > 700:
+                        txt = txt[:700].rstrip() + "\n…"
                     card.body().addWidget(label(txt, "def", wrap=True))
                 if item.get("definition"):
                     txt = self._custom_display_text(item["definition"])
                     if not self._local_expanded:
                         lines = txt.splitlines()
-                        if len(lines) > 12:
-                            txt = "\n".join(lines[:12]).rstrip() + "\n…"
-                        if len(txt) > 1400:
-                            txt = txt[:1400].rstrip() + "\n…"
+                        if len(lines) > 6:
+                            txt = "\n".join(lines[:6]).rstrip() + "\n…"
+                        if len(txt) > 700:
+                            txt = txt[:700].rstrip() + "\n…"
                     card.body().addWidget(label(txt, "en", wrap=True))
                 card.body().addSpacing(6)
             left.addWidget(card)
