@@ -27,7 +27,7 @@ def _pick(row: dict, keys) -> str:
 
 
 def _normalise(word: str, phonetic: str, translation: str, definition: str,
-               source: str = "") -> dict | None:
+               source: str = "", enabled=1) -> dict | None:
     word = (word or "").strip()
     translation = (translation or "").strip()
     definition = (definition or "").strip()
@@ -41,6 +41,7 @@ def _normalise(word: str, phonetic: str, translation: str, definition: str,
         "translation": translation[:4000],
         "definition": definition[:8000],
         "source": (source or "").strip()[:120],
+        "enabled": 1 if enabled else 0,
     }
 
 
@@ -55,6 +56,7 @@ def _from_rows(rows) -> list[dict]:
             _pick(row, _TRANS_KEYS),
             _pick(row, _DEF_KEYS),
             str(row.get("source") or "").strip(),
+            row.get("enabled", 1),
         )
         if item:
             out.append(item)

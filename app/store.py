@@ -196,14 +196,15 @@ class Store:
                 definition[:12000],
                 item_source[:120],
                 now,
+                1 if item.get("enabled", 1) else 0,
             ))
         if not rows:
             return 0
         with self._lock:
             self.con.executemany(
                 """INSERT OR REPLACE INTO custom_dict
-                   (word, lword, phonetic, translation, definition, source, ts)
-                   VALUES (?, ?, ?, ?, ?, ?, ?)""",
+                   (word, lword, phonetic, translation, definition, source, ts, enabled)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
                 rows,
             )
             self.con.commit()
@@ -234,6 +235,67 @@ class Store:
                 (1 if enabled else 0, source),
             )
             self.con.commit()
+
+    def rename_custom_source(self, old: str, new: str) -> int:
+        new = (new or "").strip()[:120]
+        if not new or new == old:
+            return 0
+        try:
+            with self._lock:
+                cur = self.con.execute(
+                    "UPDATE custom_dict SET source=? WHERE source=?", (new, old)
+                )
+                self.con.commit()
+                return int(cur.rowcount)
+        except sqlite3.IntegrityError:
+            return -1
+
+    def delete_custom_source(self, source: str) -> int:
+        with self._lock:
+            cur = self.con.execute("DELETE FROM custom_dict WHERE source=?", (source,))
+            self.con.commit()
+            return int(cur.rowcount)
+
+    def custom_suggest(self, prefix: str, limit: int = 12):
+        q = (prefix or "").strip().lower()
+        if not q:
+            return []
+        with self._lock:
+            rows = self.con.execute(
+                "SELECT DISTINCT word FROM custom_dict "
+                "WHERE lword LIKE ? AND enabled=1 "
+                "ORDER BY length(word), word LIMIT ?",
+                (q + "%", limit),
+            ).fetchall()
+        return [r["word"] for r in rows]
+
+    def custom_fulltext(self, text: str, limit: int = 15):
+        q = (text or "").strip()
+        if len(q) < 2:
+            return []
+        like = "%" + q + "%"
+        with self._lock:
+            rows = self.con.execute(
+                "SELECT word, translation, definition, source FROM custom_dict "
+                "WHERE enabled=1 AND (translation LIKE ? OR definition LIKE ?) "
+                "ORDER BY source, word LIMIT ?",
+                (like, like, limit * 2),
+            ).fetchall()
+        out, seen = [], set()
+        for r in rows:
+            key = r["word"].strip().lower()
+            if not key or key in seen:
+                continue
+            seen.add(key)
+            snippet = (r["translation"] or r["definition"] or "").replace("\n", " ")
+            out.append({
+                "word": r["word"],
+                "source": r["source"],
+                "snippet": snippet.strip()[:160],
+            })
+            if len(out) >= limit:
+                break
+        return out
 
     def custom_count(self) -> int:
         with self._lock:

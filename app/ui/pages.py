@@ -6,11 +6,11 @@ import os
 import re
 import time
 
-from PySide6.QtCore import QObject, QRectF, QRunnable, QSize, Qt, QThreadPool, QTimer, Signal
+from PySide6.QtCore import QObject, QRectF, QRunnable, QSize, QStringListModel, Qt, QThreadPool, QTimer, Signal
 from PySide6.QtGui import QColor, QFont, QGuiApplication, QPainter
 from PySide6.QtWidgets import (
-    QButtonGroup, QCheckBox, QComboBox, QFileDialog, QFrame, QHBoxLayout, QLabel,
-    QLineEdit, QMessageBox, QPushButton, QScrollArea, QSizePolicy, QVBoxLayout,
+    QButtonGroup, QCheckBox, QComboBox, QCompleter, QFileDialog, QFrame, QHBoxLayout, QLabel,
+    QLineEdit, QInputDialog, QMessageBox, QPushButton, QScrollArea, QSizePolicy, QVBoxLayout,
     QWidget,
 )
 
@@ -38,18 +38,24 @@ class _FulltextSignals(QObject):
 
 
 class _FulltextJob(QRunnable):
-    def __init__(self, token: int, text: str, lexicon, signals: _FulltextSignals):
+    def __init__(self, token: int, text: str, lexicon, signals: _FulltextSignals, store=None):
         super().__init__()
         self.token = token
         self.text = text
         self.lexicon = lexicon
         self.signals = signals
+        self.store = store
 
     def run(self):
         try:
             data = self.lexicon.fulltext_search(self.text)
         except Exception:
             data = []
+        if self.store is not None:
+            try:
+                data = list(data) + self.store.custom_fulltext(self.text)
+            except Exception:
+                pass
         try:
             self.signals.done.emit(self.token, self.text, data)
         except RuntimeError:
@@ -125,6 +131,12 @@ class SearchPage(QWidget):
         self.ft_signals = _FulltextSignals(self)
         self.ft_signals.done.connect(self._on_fulltext)
         self._build()
+        self._completer_model = QStringListModel(self)
+        self._completer = QCompleter(self._completer_model, self)
+        self._completer.setCaseSensitivity(Qt.CaseInsensitive)
+        self._completer.setFilterMode(Qt.MatchStartsWith)
+        self._completer.setMaxVisibleItems(8)
+        self.search_box.setCompleter(self._completer)
         app.engine.local_ready.connect(self._on_local)
         app.engine.online_ready.connect(self._on_online)
 
@@ -210,6 +222,7 @@ class SearchPage(QWidget):
             self.searched.emit(text)
 
     def _on_typing(self, text: str):
+        self._update_completions(text)
         if not text.strip():
             self.result = None
             self.online_data = None
@@ -218,6 +231,16 @@ class SearchPage(QWidget):
             self.chips_row.show()
             self.title.setText("查词")
             self.status.setText("")
+
+    def _update_completions(self, text: str):
+        try:
+            words = self.app.store.custom_suggest(text, 12) if text.strip() else []
+        except Exception:
+            words = []
+        self._completer_model.setStringList(words)
+        if words:
+            self._completer.setCompletionPrefix(text)
+            self._completer.complete()
 
     def search(self, text: str, record: bool = True):
         text = text.strip()
@@ -258,7 +281,10 @@ class SearchPage(QWidget):
         ):
             token = self.ft_token
             QThreadPool.globalInstance().start(
-                _FulltextJob(token, res["query"], self.app.lexicon, self.ft_signals)
+                _FulltextJob(
+                    token, res["query"], self.app.lexicon, self.ft_signals,
+                    store=self.app.store,
+                )
             )
 
     def _on_fulltext(self, token: int, text: str, data: list):
@@ -1594,14 +1620,28 @@ class SettingsPage(QWidget):
         sources = self.app.store.custom_sources()
         for src in sources:
             card.body().addWidget(hline())
-            sw = ToggleSwitch(card, bool(src.get("enabled", 1)))
+            name = src.get("source", "本地词库")
+            controls = QWidget()
+            cl = QHBoxLayout(controls)
+            cl.setContentsMargins(0, 0, 0, 0)
+            cl.setSpacing(6)
+            sw = ToggleSwitch(controls, bool(src.get("enabled", 1)))
             sw.toggled.connect(
-                lambda v, name=src.get("source", ""): self._toggle_custom_source(name, v)
+                lambda v, n=name: self._toggle_custom_source(n, v)
             )
+            cl.addWidget(sw)
+            rename_btn = QPushButton("重命名")
+            rename_btn.setObjectName("chip")
+            rename_btn.clicked.connect(lambda _=False, n=name: self._rename_custom_source(n))
+            cl.addWidget(rename_btn)
+            del_btn = QPushButton("删除")
+            del_btn.setObjectName("chip")
+            del_btn.clicked.connect(lambda _=False, n=name: self._delete_custom_source(n))
+            cl.addWidget(del_btn)
             card.body().addWidget(SettingRow(
-                src.get("source", "本地词库"),
+                name,
                 "%d 条 · 关闭后不参与查词" % int(src.get("count", 0)),
-                sw,
+                controls,
             ))
         lay.addWidget(card)
         self._refresh_custom_count()
@@ -1768,6 +1808,39 @@ class SettingsPage(QWidget):
                 page.search(query)
         except Exception:
             pass
+
+    def _rename_custom_source(self, source: str):
+        new, ok = QInputDialog.getText(
+            self, "重命名本地词典", "新的来源名称：", text=source
+        )
+        if not ok:
+            return
+        new = new.strip()
+        if not new or new == source:
+            return
+        n = self.app.store.rename_custom_source(source, new)
+        if n < 0:
+            QMessageBox.warning(self, "重命名失败", "这个名称已经存在，请换一个。")
+            return
+        self._refresh_search()
+        QTimer.singleShot(0, self.app.window.refresh_settings)
+
+    def _delete_custom_source(self, source: str):
+        if QMessageBox.question(
+            self,
+            "删除本地词典",
+            "确定删除「%s」的全部词条吗？\n不会影响其他来源。" % source,
+        ) != QMessageBox.Yes:
+            return
+        self.app.store.delete_custom_source(source)
+        self._refresh_search()
+        QTimer.singleShot(0, self.app.window.refresh_settings)
+
+    def _refresh_search(self):
+        page = self.app.window.search_page
+        query = page.search_box.text().strip()
+        if query:
+            page.search(query)
 
     def _import_custom(self):
         path, _ = QFileDialog.getOpenFileName(
