@@ -44,12 +44,24 @@ def category_label(text: str) -> str:
 
 def parse_thesaurus(xmls, word: str) -> dict | None:
     raw = "".join(xmls or [])
+    # The LD2 export sometimes glues the next headword between two divs,
+    # e.g. ...</div>pep<div... .  Cut the next entry off instead of letting
+    # its senses leak into this one.
+    stray = re.search(
+        r'</div>\s*([A-Za-z][A-Za-z\'\- ]{0,32})\s*(?=<div\s+style="margin-bottom:3px">)',
+        raw,
+    )
+    if stray:
+        raw = raw[:stray.start()] + "</div>"
     pos = ""
-    pm = re.search(
+    pos_values = re.findall(
         r'<font[^>]*color="#209020"[^>]*>\s*([^<]+?)\s*</font>', raw, re.I
     )
-    if pm:
-        pos = pm.group(1).strip()
+    for value in pos_values:
+        value = value.strip()
+        if value.lower() in ("n.", "v.", "adj.", "adv.", "prep.", "pron.", "conj."):
+            pos = value
+            break
     marks = list(re.finditer(r"<b>\s*(\d+)\s*</b>", raw))
     senses = []
     for idx, mark in enumerate(marks):
@@ -132,6 +144,16 @@ def to_html(data: dict, expanded: bool = True) -> str:
         title = soft_case(sense.get("title", ""))
         no = (sense.get("no") or "").strip()
         head = " ".join(x for x in (no, title) if x)
+        if no and not title and kind != "collocations":
+            defn = (sense.get("def") or "").strip()
+            parts.append(
+                '<p style="margin:5px 0 1px 0"><b>%s</b> %s</p>'
+                % (esc(no), esc(defn))
+            )
+            if expanded:
+                for ex in sense.get("examples") or []:
+                    parts.append('<p style="margin:1px 0 0 14px;color:#888">• %s</p>' % esc(ex))
+            continue
         if head:
             parts.append('<p style="margin:6px 0 2px 0"><b>%s</b>' % esc(head))
             gram = (sense.get("gram") or "").strip()
