@@ -504,20 +504,34 @@ class SearchPage(QWidget):
         # User-provided local dictionary entries (never uploaded)
         if custom and self.view_source in ("all", "ecdict", "local"):
             card = section_card("本地词典", extra=label("仅本机", "faint"))
-            for item in custom[:6]:
+            last_source = None
+            first_entry = True
+            for item in custom[:8]:
+                source = (item.get("source") or "本地词库").strip()
+                if source != last_source:
+                    if not first_entry:
+                        card.body().addSpacing(10)
+                        card.body().addWidget(hline())
+                        card.body().addSpacing(4)
+                    card.body().addWidget(label(source, "faint", wrap=True))
+                    last_source = source
+                    first_entry = False
+                else:
+                    card.body().addSpacing(6)
+                    card.body().addWidget(hline())
+                    card.body().addSpacing(2)
                 top = QHBoxLayout()
                 top.setSpacing(8)
                 top.addWidget(label(item.get("word", ""), "body"))
                 if item.get("phonetic"):
                     top.addWidget(label("/%s/" % item["phonetic"].strip("/"), "phonetic"))
                 top.addStretch(1)
-                top.addWidget(label(item.get("source", ""), "faint"))
                 card.body().addLayout(top)
                 if item.get("translation"):
                     card.body().addWidget(label(item["translation"], "def", wrap=True))
                 if item.get("definition"):
                     card.body().addWidget(label(item["definition"], "en", wrap=True))
-                card.body().addSpacing(4)
+                card.body().addSpacing(6)
             left.addWidget(card)
 
         # Chinese definitions: online first when available, offline fallback
@@ -1538,6 +1552,18 @@ class SettingsPage(QWidget):
             " MDX / LD2 需先导出为这些格式。",
             custom_row,
         ))
+        sources = self.app.store.custom_sources()
+        for src in sources:
+            card.body().addWidget(hline())
+            sw = ToggleSwitch(card, bool(src.get("enabled", 1)))
+            sw.toggled.connect(
+                lambda v, name=src.get("source", ""): self._toggle_custom_source(name, v)
+            )
+            card.body().addWidget(SettingRow(
+                src.get("source", "本地词库"),
+                "%d 条 · 关闭后不参与查词" % int(src.get("count", 0)),
+                sw,
+            ))
         lay.addWidget(card)
         self._refresh_custom_count()
 
@@ -1694,6 +1720,16 @@ class SettingsPage(QWidget):
             n = 0
         self.custom_count_lb.setText("已导入 %d 条" % n if n else "还没有导入")
 
+    def _toggle_custom_source(self, source: str, enabled: bool):
+        try:
+            self.app.store.set_custom_source_enabled(source, enabled)
+            page = self.app.window.search_page
+            query = page.search_box.text().strip()
+            if query:
+                page.search(query)
+        except Exception:
+            pass
+
     def _import_custom(self):
         path, _ = QFileDialog.getOpenFileName(
             self,
@@ -1718,6 +1754,7 @@ class SettingsPage(QWidget):
             "导入完成",
             "已导入 %d 条词条，只保存在本机。\n文件：%s" % (n, os.path.basename(path)),
         )
+        QTimer.singleShot(0, self.app.window.refresh_settings)
 
     def _clear_custom(self):
         try:
@@ -1736,6 +1773,7 @@ class SettingsPage(QWidget):
         self.app.store.clear_custom()
         self._refresh_custom_count()
         QMessageBox.information(self, "已清空", "本机导入的词条已删除。")
+        QTimer.singleShot(0, self.app.window.refresh_settings)
 
     def _backup_data(self):
         default = os.path.join(

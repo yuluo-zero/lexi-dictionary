@@ -59,6 +59,7 @@ class Store:
                     definition TEXT DEFAULT '',
                     source TEXT DEFAULT '',
                     ts INTEGER NOT NULL,
+                    enabled INTEGER NOT NULL DEFAULT 1,
                     UNIQUE(lword, source)
                 );
                 CREATE INDEX IF NOT EXISTS idx_custom_lword ON custom_dict(lword);
@@ -88,6 +89,13 @@ class Store:
             ):
                 if name not in cols:
                     self.con.execute("ALTER TABLE wordbook ADD COLUMN %s %s" % (name, decl))
+            custom_cols = {
+                r[1] for r in self.con.execute("PRAGMA table_info(custom_dict)").fetchall()
+            }
+            if "enabled" not in custom_cols:
+                self.con.execute(
+                    "ALTER TABLE custom_dict ADD COLUMN enabled INTEGER NOT NULL DEFAULT 1"
+                )
             self.con.commit()
 
     # ------------------------------------------------------------------ history
@@ -204,10 +212,27 @@ class Store:
         with self._lock:
             rows = self.con.execute(
                 "SELECT word, phonetic, translation, definition, source "
-                "FROM custom_dict WHERE lword=? ORDER BY source, word LIMIT 8",
+                "FROM custom_dict WHERE lword=? AND enabled=1 "
+                "ORDER BY source, word LIMIT 8",
                 ((word or "").strip().lower(),),
             ).fetchall()
         return [dict(r) for r in rows]
+
+    def custom_sources(self):
+        with self._lock:
+            rows = self.con.execute(
+                "SELECT source, count(1) AS count, max(enabled) AS enabled "
+                "FROM custom_dict GROUP BY source ORDER BY source"
+            ).fetchall()
+        return [dict(r) for r in rows]
+
+    def set_custom_source_enabled(self, source: str, enabled: bool):
+        with self._lock:
+            self.con.execute(
+                "UPDATE custom_dict SET enabled=? WHERE source=?",
+                (1 if enabled else 0, source),
+            )
+            self.con.commit()
 
     def custom_count(self) -> int:
         with self._lock:
