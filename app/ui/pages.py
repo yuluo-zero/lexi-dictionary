@@ -235,6 +235,8 @@ class SearchPage(QWidget):
 
     def _on_local(self, res: dict):
         self.result = res
+        if self.view_source == "local" and not res.get("custom"):
+            self.view_source = "all"
         self.online_data = None
         self.fulltext_results = []
         self.ft_token += 1
@@ -336,8 +338,9 @@ class SearchPage(QWidget):
 
     def _add_source_bar(self, kind: str):
         sources = (
-            [("all", "全部"), ("ecdict", "ECDICT·离线"), ("wordnet", "WordNet·离线"),
-             ("collins", "柯林斯·在线"), ("youdao", "有道·在线"), ("merriam", "韦氏·在线")]
+            [("all", "全部"), ("ecdict", "ECDICT·离线"), ("wordnet", "WordNet·离线")]
+            + ([("local", "本地")] if (self.result or {}).get("custom") else [])
+            + [("collins", "柯林斯·在线"), ("youdao", "有道·在线"), ("merriam", "韦氏·在线")]
             if kind == "en"
             else [("all", "全部"), ("cedict", "CC-CEDICT·离线")]
         )
@@ -479,6 +482,17 @@ class SearchPage(QWidget):
                 label("在线词典没有「%s」的词条，已按「%s」查询。" % (res["query"], lookup_variant), "faint")
             )
 
+        custom = res.get("custom") or []
+        if custom and self.view_source in ("all", "ecdict", "local"):
+            names = []
+            for item in custom:
+                name = (item.get("source") or "本地词库").strip()
+                if name not in names:
+                    names.append(name)
+            self.result_layout.addWidget(
+                label("已加载本地词典：%s" % " / ".join(names), "faint")
+            )
+
         columns = QHBoxLayout()
         columns.setSpacing(14)
         left = QVBoxLayout()
@@ -488,8 +502,7 @@ class SearchPage(QWidget):
         columns.addLayout(left, 1)
 
         # User-provided local dictionary entries (never uploaded)
-        custom = res.get("custom") or []
-        if custom and self.view_source in ("all", "ecdict"):
+        if custom and self.view_source in ("all", "ecdict", "local"):
             card = section_card("本地词典", extra=label("仅本机", "faint"))
             for item in custom[:6]:
                 top = QHBoxLayout()
@@ -891,6 +904,8 @@ class SearchPage(QWidget):
         cn_en = self.settings.get("cn_en", True)
         en_en = self.settings.get("en_en", True)
         entry = res.get("entry")
+        if res.get("custom"):
+            return True
         if entry and cn_en and entry.get("translation"):
             return True
         if entry and en_en and entry.get("definition"):
