@@ -1,4 +1,4 @@
-# -*- coding: utf-8 -*-
+﻿# -*- coding: utf-8 -*-
 """User data: history, wordbook and settings helpers."""
 from __future__ import annotations
 
@@ -192,7 +192,7 @@ class Store:
                 word.lower(),
                 str(item.get("phonetic") or "").strip()[:80],
                 translation[:4000],
-                definition[:8000],
+                definition[:12000],
                 source,
                 now,
             ))
@@ -506,3 +506,4 @@ class Store:
             for r in rows:
                 w.writerow([r["word"], r["phonetic"], r["brief"], time.strftime("%Y-%m-%d %H:%M", time.localtime(r["ts"]))])
         return len(rows)
+
