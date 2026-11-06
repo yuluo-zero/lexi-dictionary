@@ -52,7 +52,7 @@ class Application(QObject):
 
         self.store = Store(config.USER_DB)
         self.lexicon = Lexicon(config.DICT_DIR)
-        self.engine = SearchEngine(self.lexicon, lambda: self.settings)
+        self.engine = SearchEngine(self.lexicon, lambda: self.settings, store=self.store)
 
         self.window = MainWindow(self)
         self.bubble = Bubble()

@@ -92,9 +92,10 @@ class SearchEngine(QObject):
     local_ready = Signal(dict)
     online_ready = Signal(dict)
 
-    def __init__(self, lexicon: Lexicon, settings_getter, parent=None):
+    def __init__(self, lexicon: Lexicon, settings_getter, parent=None, store=None):
         super().__init__(parent)
         self.lex = lexicon
+        self.store = store
         self.settings = settings_getter
         self.pool = QThreadPool(self)
         self.pool.setMaxThreadCount(3)
@@ -123,6 +124,7 @@ class SearchEngine(QObject):
             "kind": kind,
             "entry": None,
             "meta": {},
+            "custom": [],
             "wordnet": [],
             "cedict": [],
             "reverse": [],
@@ -134,6 +136,8 @@ class SearchEngine(QObject):
         settings = self.settings()
         full = bool(settings.get("full_content", False))
         if kind == "en":
+            if self.store is not None:
+                res["custom"] = self.store.custom_lookup(text)
             if settings.get("source_ecdict", True):
                 entry, meta = self.lex.lookup_word(text)
                 res["entry"] = entry

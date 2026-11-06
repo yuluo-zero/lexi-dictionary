@@ -14,6 +14,7 @@ from PySide6.QtWidgets import (
 )
 
 from . import icons
+from ..custom_dict import parse_custom_dictionary
 from .theme import theme
 from .widgets import (
     Card, Chip, EmptyState, FlowLayout, IconButton, RangeBadge, SearchBox,
@@ -485,6 +486,26 @@ class SearchPage(QWidget):
         right = QVBoxLayout()
         right.setSpacing(14)
         columns.addLayout(left, 1)
+
+        # User-provided local dictionary entries (never uploaded)
+        custom = res.get("custom") or []
+        if custom and self.view_source in ("all", "ecdict"):
+            card = section_card("本地词典", extra=label("仅本机", "faint"))
+            for item in custom[:6]:
+                top = QHBoxLayout()
+                top.setSpacing(8)
+                top.addWidget(label(item.get("word", ""), "body"))
+                if item.get("phonetic"):
+                    top.addWidget(label("/%s/" % item["phonetic"].strip("/"), "phonetic"))
+                top.addStretch(1)
+                top.addWidget(label(item.get("source", ""), "faint"))
+                card.body().addLayout(top)
+                if item.get("translation"):
+                    card.body().addWidget(label(item["translation"], "def", wrap=True))
+                if item.get("definition"):
+                    card.body().addWidget(label(item["definition"], "en", wrap=True))
+                card.body().addSpacing(4)
+            left.addWidget(card)
 
         # Chinese definitions: online first when available, offline fallback
         online_cn = (
@@ -1478,6 +1499,33 @@ class SettingsPage(QWidget):
         card.body().addWidget(SettingRow("韦氏版本", "选择用哪一部在线查询", mwv))
         lay.addWidget(card)
 
+        # ---- 本地词典
+        lay.addWidget(self._section_label("本地词典"))
+        card = Card()
+        card.body().setSpacing(0)
+        custom_row = QWidget()
+        cr = QHBoxLayout(custom_row)
+        cr.setContentsMargins(0, 0, 0, 0)
+        cr.setSpacing(8)
+        import_btn = QPushButton("导入 CSV / JSON")
+        import_btn.setObjectName("primary")
+        import_btn.clicked.connect(self._import_custom)
+        cr.addWidget(import_btn)
+        clear_btn = QPushButton("清空本地词典")
+        clear_btn.setObjectName("chip")
+        clear_btn.clicked.connect(self._clear_custom)
+        cr.addWidget(clear_btn)
+        self.custom_count_lb = label("", "faint")
+        cr.addWidget(self.custom_count_lb)
+        card.body().addWidget(SettingRow(
+            "导入自己的词库",
+            "支持 CSV / TSV / JSON / TXT；只保存在本机 user.db，不会上传 GitHub 或 B站。"
+            " MDX / LD2 需先导出为这些格式。",
+            custom_row,
+        ))
+        lay.addWidget(card)
+        self._refresh_custom_count()
+
         # ---- 发音
         lay.addWidget(self._section_label("发音"))
         card = Card()
@@ -1623,6 +1671,56 @@ class SettingsPage(QWidget):
                 callback(v)
         sw.toggled.connect(on)
         return sw
+
+    def _refresh_custom_count(self):
+        try:
+            n = self.app.store.custom_count()
+        except Exception:
+            n = 0
+        self.custom_count_lb.setText("已导入 %d 条" % n if n else "还没有导入")
+
+    def _import_custom(self):
+        path, _ = QFileDialog.getOpenFileName(
+            self,
+            "导入本地词典",
+            "",
+            "词典文件 (*.csv *.tsv *.json *.txt);;所有文件 (*)",
+        )
+        if not path:
+            return
+        try:
+            entries = parse_custom_dictionary(path)
+        except Exception as exc:
+            QMessageBox.warning(self, "导入失败", str(exc))
+            return
+        if not entries:
+            QMessageBox.warning(self, "导入失败", "文件里没有识别到词条。")
+            return
+        n = self.app.store.add_custom_entries(entries, os.path.basename(path))
+        self._refresh_custom_count()
+        QMessageBox.information(
+            self,
+            "导入完成",
+            "已导入 %d 条词条，只保存在本机。\n文件：%s" % (n, os.path.basename(path)),
+        )
+
+    def _clear_custom(self):
+        try:
+            n = self.app.store.custom_count()
+        except Exception:
+            n = 0
+        if not n:
+            QMessageBox.information(self, "本地词典", "还没有导入词条。")
+            return
+        if QMessageBox.question(
+            self,
+            "清空本地词典",
+            "确定删除本机导入的 %d 条词条吗？\n不会影响 ECDICT / WordNet / CC-CEDICT。" % n,
+        ) != QMessageBox.Yes:
+            return
+        self.app.store.clear_custom()
+        self._refresh_custom_count()
+        QMessageBox.information(self, "已清空", "本机导入的词条已删除。")
 
     def _backup_data(self):
         default = os.path.join(

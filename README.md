@@ -17,6 +17,7 @@
 - **悬浮球**：快捷搜索、待复习角标、贴边收起
 - **查询历史**：可勾选删除，也可一键清空
 - **数据本地**：生词、历史、设置都在本机；支持备份 / 恢复
+- **本地自定义词典**：可导入自己的 CSV / TSV / JSON / TXT 词库，只保存在本机
 - **来源可选**：ECDICT / WordNet / 柯林斯 / 韦氏 / 有道；支持并列对照
 
 ## 截图
@@ -104,6 +105,34 @@ data/dict/wordnet.db
 ```
 
 没有离线库时，在线查询仍可使用，但启动会提示离线词典缺失。
+
+## 本地自定义词典
+
+可以把自己有权使用的词库导入本机：
+
+**设置 → 本地词典 → 导入 CSV / JSON**
+
+支持：
+
+- CSV：`word,phonetic,translation,definition`
+- TSV：同上，用 Tab 分隔
+- JSON：对象数组，或 `{"word": "释义"}`
+- TXT：`word<Tab>phonetic<Tab>translation<Tab>definition`
+
+示例：
+
+```csv
+word,phonetic,translation,definition
+optimise,ˈɒptɪmaɪz,使最优化,to make as effective as possible
+```
+
+说明：
+
+- 只保存在本机 `data/user.db`
+- 不会上传 GitHub、B站或便携包
+- 不上传到任何在线服务
+- `.mdx` / `.ld2` 是专有格式，需要先在词典软件里导出为 CSV/TSV/JSON/TXT
+- 请确认你对该词库有本地使用和转换权限；商业词典不要随应用分发
 
 ## 在线词典 / API Key
 

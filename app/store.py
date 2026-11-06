@@ -50,6 +50,18 @@ class Store:
                     note TEXT,
                     ts INTEGER NOT NULL
                 );
+                CREATE TABLE IF NOT EXISTS custom_dict(
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    word TEXT NOT NULL,
+                    lword TEXT NOT NULL,
+                    phonetic TEXT DEFAULT '',
+                    translation TEXT DEFAULT '',
+                    definition TEXT DEFAULT '',
+                    source TEXT DEFAULT '',
+                    ts INTEGER NOT NULL,
+                    UNIQUE(lword, source)
+                );
+                CREATE INDEX IF NOT EXISTS idx_custom_lword ON custom_dict(lword);
                 """
             )
             # Lightweight migration for the review scheduler.
@@ -154,6 +166,59 @@ class Store:
                     "SELECT * FROM wordbook ORDER BY ts DESC"
                 ).fetchall()
         return [dict(r) for r in rows]
+
+    # ------------------------------------------------------------ local dictionary
+    def add_custom_entries(self, entries, source: str = "") -> int:
+        """Add user-provided entries to the local dictionary table."""
+        source = (source or "本地").strip()[:120]
+        now = int(time.time())
+        rows = []
+        for item in entries or []:
+            word = str(item.get("word") or "").strip()
+            translation = str(item.get("translation") or "").strip()
+            definition = str(item.get("definition") or "").strip()
+            if not word or not (translation or definition):
+                continue
+            rows.append((
+                word,
+                word.lower(),
+                str(item.get("phonetic") or "").strip()[:80],
+                translation[:4000],
+                definition[:8000],
+                source,
+                now,
+            ))
+        if not rows:
+            return 0
+        with self._lock:
+            self.con.executemany(
+                """INSERT OR REPLACE INTO custom_dict
+                   (word, lword, phonetic, translation, definition, source, ts)
+                   VALUES (?, ?, ?, ?, ?, ?, ?)""",
+                rows,
+            )
+            self.con.commit()
+        return len(rows)
+
+    def custom_lookup(self, word: str):
+        with self._lock:
+            rows = self.con.execute(
+                "SELECT word, phonetic, translation, definition, source "
+                "FROM custom_dict WHERE lword=? ORDER BY source, word LIMIT 8",
+                ((word or "").strip().lower(),),
+            ).fetchall()
+        return [dict(r) for r in rows]
+
+    def custom_count(self) -> int:
+        with self._lock:
+            return int(self.con.execute("SELECT count(1) FROM custom_dict").fetchone()[0])
+
+    def clear_custom(self) -> int:
+        with self._lock:
+            n = self.con.execute("SELECT count(1) FROM custom_dict").fetchone()[0]
+            self.con.execute("DELETE FROM custom_dict")
+            self.con.commit()
+        return int(n)
 
     def due_count(self) -> int:
         now = int(time.time())
