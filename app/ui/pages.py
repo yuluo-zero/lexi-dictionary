@@ -236,6 +236,7 @@ class SearchPage(QWidget):
         self.right_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
         self.right_scroll.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
         self.right_scroll.setFixedWidth(300)
+        self.right_scroll.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Expanding)
         self.right_inner = QWidget()
         self.right_layout = QVBoxLayout(self.right_inner)
         self.right_layout.setContentsMargins(0, 4, 6, 20)
@@ -243,7 +244,7 @@ class SearchPage(QWidget):
         self.right_scroll.setWidget(self.right_inner)
         self._apply_right_style()
         self.right_scroll.hide()
-        result_row.addWidget(self.right_scroll, 0, Qt.AlignTop)
+        result_row.addWidget(self.right_scroll, 0)
         page_layout.addWidget(self.result_area, 1)
         self.result_page.hide()
         self.stack_layout.addWidget(self.result_page, 1)
@@ -863,6 +864,8 @@ class SearchPage(QWidget):
         right_cards = {}
 
         def put_right(key, card):
+            card.setMaximumWidth(290)
+            card.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Preferred)
             right_cards.setdefault(key, []).append(card)
 
         def put(key, card):
@@ -1451,8 +1454,19 @@ class SearchPage(QWidget):
 
     def _sync_add_button(self, word: str, entry):
         exists = self.app.store.has_word(word)
-        self.add_btn.setText("已在生词本" if exists else "+ 生词本")
-        self.add_btn.setObjectName("primary" if not exists else "chip")
+        self.add_btn.setMinimumWidth(100)
+        if exists:
+            self.add_btn.setText("✓ 已加入")
+            self.add_btn.setObjectName("chip")
+            self.add_btn.setStyleSheet(
+                f"QPushButton{{background:transparent;border:1px solid {theme['border']};"
+                f"color:{theme['green']};padding:8px 14px;border-radius:10px;font-weight:600;}}"
+                f"QPushButton:hover{{border-color:{theme['green']};}}"
+            )
+        else:
+            self.add_btn.setText("+ 生词本")
+            self.add_btn.setObjectName("primary")
+            self.add_btn.setStyleSheet("")
 
     def _toggle_word(self, word: str, entry):
         if self.app.store.has_word(word):

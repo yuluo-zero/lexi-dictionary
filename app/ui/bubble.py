@@ -115,10 +115,12 @@ class Bubble(QWidget):
         bottom = QHBoxLayout()
         bottom.setSpacing(6)
         self.book_btn = QPushButton("＋ 生词本", self.card)
-        self.book_btn.setObjectName("chip")
+        self.book_btn.setObjectName("bookbtn")
         self.book_btn.setCursor(Qt.PointingHandCursor)
         self.book_btn.clicked.connect(self._wordbook_clicked)
         bottom.addWidget(self.book_btn)
+        self._in_wordbook = False
+        self._apply_book_style()
         self.expand_btn = QPushButton("展开", self.card)
         self.expand_btn.setObjectName("chip")
         self.expand_btn.setCursor(Qt.PointingHandCursor)
@@ -183,6 +185,7 @@ class Bubble(QWidget):
         self.brief_lb.setStyleSheet(f"color:{theme['sub']}; font-size:13px;")
         self.open_btn.setStyleSheet(f"color:{theme['accent']}; font-size:12px; font-weight:600;")
         self.speak_btn.refresh()
+        self._apply_book_style()
 
     def show_for(self, query: str, title: str, phonetic: str, brief: str, pos: QPoint,
                  source: str = ""):
@@ -256,7 +259,24 @@ class Bubble(QWidget):
             self.expand_requested.emit(self._word)
 
     def set_wordbook_state(self, in_wordbook: bool):
-        self.book_btn.setText("✓ 已在生词本" if in_wordbook else "＋ 生词本")
+        self._in_wordbook = bool(in_wordbook)
+        self.book_btn.setText("✓ 已在生词本" if self._in_wordbook else "＋ 生词本")
+        self._apply_book_style()
+
+    def _apply_book_style(self):
+        if self._in_wordbook:
+            bg, fg = "transparent", theme["green"]
+            text = "✓ 已加入"
+        else:
+            bg, fg = theme["surface2"], theme["sub"]
+            text = "＋ 生词本"
+        self.book_btn.setText(text)
+        self.book_btn.setMinimumWidth(82)
+        self.book_btn.setStyleSheet(
+            f"QPushButton#bookbtn{{background:{bg};color:{fg};border:1px solid {theme['border']};"
+            f"border-radius:12px;padding:4px 10px;font-size:12px;}}"
+            f"QPushButton#bookbtn:hover{{border-color:{fg};}}"
+        )
 
     def update_brief(self, brief: str, source: str = ""):
         self.brief_lb.setText(brief or "")
