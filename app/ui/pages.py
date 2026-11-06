@@ -1650,6 +1650,16 @@ class SettingsPage(QWidget):
                 lambda v, n=name: self._toggle_custom_source(n, v)
             )
             cl.addWidget(sw)
+            up_btn = QPushButton("↑")
+            up_btn.setObjectName("chip")
+            up_btn.setFixedWidth(30)
+            up_btn.clicked.connect(lambda _=False, n=name: self._move_custom_source(n, -1))
+            cl.addWidget(up_btn)
+            down_btn = QPushButton("↓")
+            down_btn.setObjectName("chip")
+            down_btn.setFixedWidth(30)
+            down_btn.clicked.connect(lambda _=False, n=name: self._move_custom_source(n, 1))
+            cl.addWidget(down_btn)
             rename_btn = QPushButton("重命名")
             rename_btn.setObjectName("chip")
             rename_btn.clicked.connect(lambda _=False, n=name: self._rename_custom_source(n))
@@ -1828,6 +1838,11 @@ class SettingsPage(QWidget):
                 page.search(query)
         except Exception:
             pass
+
+    def _move_custom_source(self, source: str, delta: int):
+        if self.app.store.move_custom_source(source, delta):
+            self._refresh_search()
+            QTimer.singleShot(0, self.app.window.refresh_settings)
 
     def _rename_custom_source(self, source: str):
         new, ok = QInputDialog.getText(

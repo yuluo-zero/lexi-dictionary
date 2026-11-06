@@ -86,6 +86,10 @@ class Application(QObject):
             self._tts = None
 
         self.watcher = SelectionWatcher(lambda: self.settings)
+        try:
+            self.watcher.allow_hwnd = int(self.window.winId())
+        except Exception:
+            self.watcher.allow_hwnd = 0
         self.watcher.selection.connect(self._on_selection)
         self.watcher.clicked.connect(self._on_global_click)
         self.watcher.plain_click.connect(self._on_plain_click)

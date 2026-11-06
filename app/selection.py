@@ -567,8 +567,9 @@ class SelectionWatcher(QObject):
                 log.info("selection skipped: own auxiliary window")
                 return
             if not double:
-                log.info("selection skipped: drag inside own window")
-                return
+                # Allow selecting words/phrases inside the dictionary content
+                # too; the marker is what makes the lookup explicit.
+                pass
             rect = wintypes.RECT()
             user32.GetWindowRect(hwnd, ctypes.byref(rect))
             dpi = user32.GetDpiForWindow(hwnd) or 96

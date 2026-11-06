@@ -60,6 +60,7 @@ class Store:
                     source TEXT DEFAULT '',
                     ts INTEGER NOT NULL,
                     enabled INTEGER NOT NULL DEFAULT 1,
+                    sort_order INTEGER NOT NULL DEFAULT 0,
                     UNIQUE(lword, source)
                 );
                 CREATE INDEX IF NOT EXISTS idx_custom_lword ON custom_dict(lword);
@@ -95,6 +96,10 @@ class Store:
             if "enabled" not in custom_cols:
                 self.con.execute(
                     "ALTER TABLE custom_dict ADD COLUMN enabled INTEGER NOT NULL DEFAULT 1"
+                )
+            if "sort_order" not in custom_cols:
+                self.con.execute(
+                    "ALTER TABLE custom_dict ADD COLUMN sort_order INTEGER NOT NULL DEFAULT 0"
                 )
             self.con.commit()
 
@@ -213,9 +218,9 @@ class Store:
     def custom_lookup(self, word: str):
         with self._lock:
             rows = self.con.execute(
-                "SELECT word, phonetic, translation, definition, source "
+                "SELECT word, phonetic, translation, definition, source, sort_order "
                 "FROM custom_dict WHERE lword=? AND enabled=1 "
-                "ORDER BY source, word LIMIT 8",
+                "ORDER BY sort_order, source, word LIMIT 8",
                 ((word or "").strip().lower(),),
             ).fetchall()
         return [dict(r) for r in rows]
@@ -223,10 +228,29 @@ class Store:
     def custom_sources(self):
         with self._lock:
             rows = self.con.execute(
-                "SELECT source, count(1) AS count, max(enabled) AS enabled "
-                "FROM custom_dict GROUP BY source ORDER BY source"
+                "SELECT source, count(1) AS count, max(enabled) AS enabled, "
+                "min(sort_order) AS sort_order "
+                "FROM custom_dict GROUP BY source ORDER BY sort_order, source"
             ).fetchall()
         return [dict(r) for r in rows]
+
+    def move_custom_source(self, source: str, delta: int) -> bool:
+        sources = [s["source"] for s in self.custom_sources()]
+        if source not in sources:
+            return False
+        idx = sources.index(source)
+        new_idx = max(0, min(len(sources) - 1, idx + delta))
+        if new_idx == idx:
+            return False
+        sources[idx], sources[new_idx] = sources[new_idx], sources[idx]
+        with self._lock:
+            for order, name in enumerate(sources):
+                self.con.execute(
+                    "UPDATE custom_dict SET sort_order=? WHERE source=?",
+                    (order, name),
+                )
+            self.con.commit()
+        return True
 
     def set_custom_source_enabled(self, source: str, enabled: bool):
         with self._lock:
