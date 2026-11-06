@@ -1876,10 +1876,16 @@ class SettingsPage(QWidget):
             cl.setContentsMargins(0, 0, 0, 0)
             cl.setSpacing(6)
             sw = ToggleSwitch(controls, bool(src.get("enabled", 1)))
+            sw.setToolTip("关闭：不参与查词，但不会删除词条")
             sw.toggled.connect(
                 lambda v, n=name: self._toggle_custom_source(n, v)
             )
             cl.addWidget(sw)
+            state_lb = label("启用" if src.get("enabled", 1) else "关闭", "faint")
+            sw.toggled.connect(
+                lambda v, lb=state_lb: lb.setText("启用" if v else "关闭")
+            )
+            cl.addWidget(state_lb)
             up_btn = QPushButton("↑")
             up_btn.setObjectName("chip")
             up_btn.setFixedWidth(30)

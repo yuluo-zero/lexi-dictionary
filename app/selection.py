@@ -551,6 +551,24 @@ class SelectionWatcher(QObject):
     def _handle(self, x, y, moved: int = 0, double: bool = False):
         if not self._enabled:
             return
+        # A drag that starts in another app and is released over this app is
+        # a text drop, not a selection.  The foreground window can still be
+        # the source app at this point, so use WindowFromPoint to detect the
+        # drop target.
+        try:
+            target = user32.WindowFromPoint(wintypes.POINT(x, y))
+            tpid = wintypes.DWORD(0)
+            user32.GetWindowThreadProcessId(target, ctypes.byref(tpid))
+            if (
+                not double
+                and tpid.value == self.self_pid
+                and self._down_hwnd
+                and int(self._down_hwnd) != int(self.allow_hwnd or 0)
+            ):
+                log.info("selection skipped: dropped into own window")
+                return
+        except Exception:
+            pass
         hwnd = user32.GetForegroundWindow()
         rect = wintypes.RECT()
         user32.GetWindowRect(hwnd, ctypes.byref(rect))
