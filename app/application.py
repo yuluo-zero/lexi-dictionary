@@ -460,7 +460,8 @@ class Application(QObject):
         if not m.query:
             return
         self.bubble.show_for(
-            m.query, m.title, m.phonetic, m.brief, m.pos(), source=self._bubble_source
+            m.query, m.title, m.phonetic, m.brief, m.pos(), source=self._bubble_source,
+            side=self.settings.get("bubble_side", "right"),
         )
         self.bubble.set_wordbook_state(self.store.has_word(m.query))
         if self._bubble_pending_online:

@@ -10,7 +10,7 @@ import threading
 
 APP_NAME = "划词词典"
 APP_EN = "Lexi"
-VERSION = "1.2.2"
+VERSION = "1.2.3"
 
 _lock = threading.RLock()
 
@@ -67,6 +67,7 @@ DEFAULTS = {
     "restore_clipboard": True,
     "selection_in_terminals": False,
     "bubble_timeout_s": 8,
+    "bubble_side": "right",          # right / left / above / below
     "bubble_source": "auto",         # auto / local / ecdict / wordnet / youdao
     "bubble_online_fallback": False,
     "bubble_expand_sources": ["local", "ecdict", "wordnet"],

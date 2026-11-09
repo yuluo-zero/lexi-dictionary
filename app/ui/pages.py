@@ -1911,6 +1911,26 @@ class SettingsPage(QWidget):
             bubble_src,
         ))
         card.body().addWidget(hline())
+        bubble_side = QComboBox()
+        for code, name in (
+            ("right", "选中文字右侧"),
+            ("left", "选中文字左侧"),
+            ("above", "选中文字上方"),
+            ("below", "选中文字下方"),
+        ):
+            bubble_side.addItem(name, code)
+        bubble_side.setCurrentIndex(max(0, bubble_side.findData(
+            self.s.get("bubble_side", "right")
+        )))
+        bubble_side.currentIndexChanged.connect(
+            lambda: self._set("bubble_side", bubble_side.currentData())
+        )
+        card.body().addWidget(SettingRow(
+            "小窗出现方向",
+            "以松开鼠标的位置为基准；空间不足时自动翻到另一侧",
+            bubble_side,
+        ))
+        card.body().addWidget(hline())
         card.body().addWidget(SettingRow(
             "本地无结果时在线补全",
             "开启后，离线查不到时才请求有道；默认关闭，保证小窗秒开",

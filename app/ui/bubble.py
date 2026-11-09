@@ -188,7 +188,7 @@ class Bubble(QWidget):
         self._apply_book_style()
 
     def show_for(self, query: str, title: str, phonetic: str, brief: str, pos: QPoint,
-                 source: str = ""):
+                 source: str = "", side: str = "right"):
         self._word = query
         self.word_lb.setText(title)
         f = QFont("Microsoft YaHei UI" if any("\u4e00" <= ch <= "\u9fff" for ch in title) else "Georgia", 15)
@@ -211,12 +211,27 @@ class Bubble(QWidget):
         screen = QGuiApplication.screenAt(pos) or QGuiApplication.primaryScreen()
         area = screen.availableGeometry()
         w, h = self.width(), self.height()
-        x = pos.x() + 14
-        y = pos.y() + 20
-        if x + w > area.right() - 8:
-            x = pos.x() - w - 14
-        if y + h > area.bottom() - 8:
-            y = pos.y() - h - 16
+        gap_x, gap_y = 14, 18
+        if side == "left":
+            x = pos.x() - w - gap_x
+            y = pos.y() + gap_y
+            if x < area.left() + 8:
+                x = pos.x() + gap_x
+        elif side == "above":
+            x = pos.x() + gap_x
+            y = pos.y() - h - gap_y
+            if y < area.top() + 8:
+                y = pos.y() + gap_y
+        elif side == "below":
+            x = pos.x() + gap_x
+            y = pos.y() + gap_y
+            if y + h > area.bottom() - 8:
+                y = pos.y() - h - gap_y
+        else:  # right
+            x = pos.x() + gap_x
+            y = pos.y() + gap_y
+            if x + w > area.right() - 8:
+                x = pos.x() - w - gap_x
         x = max(area.left() + 8, min(x, area.right() - w - 8))
         y = max(area.top() + 8, min(y, area.bottom() - h - 8))
         self.move(x, y + 6)
