@@ -406,6 +406,8 @@ class SelectionWatcher(QObject):
         self._last_down_time = 0.0
         self._last_down_pt = (0, 0)
         self._down_hwnd = 0
+        self._down_pid = 0
+        self._down_name = ""
         self._enabled = True
         self.allow_hwnd = 0
         self.titlebar_h = 46
@@ -466,6 +468,12 @@ class SelectionWatcher(QObject):
                         self._last_down_time = now
                         self._last_down_pt = (ms.pt.x, ms.pt.y)
                         self._down_hwnd = int(user32.GetForegroundWindow() or 0)
+                        _dp = wintypes.DWORD(0)
+                        user32.GetWindowThreadProcessId(
+                            self._down_hwnd, ctypes.byref(_dp)
+                        )
+                        self._down_pid = int(_dp.value)
+                        self._down_name = _process_name(self._down_pid) or ""
                         if is_double:
                             self._double_until = now + 0.6
                             log.info("double-click detected")
@@ -574,9 +582,15 @@ class SelectionWatcher(QObject):
         user32.GetWindowRect(hwnd, ctypes.byref(rect))
         pid = wintypes.DWORD(0)
         user32.GetWindowThreadProcessId(hwnd, ctypes.byref(pid))
+        name = _process_name(pid.value) or ""
+        wps_suite = {"wps.exe", "wpspdf.exe", "et.exe", "wpp.exe", "wpscloudsvr.exe", "wpscenter.exe"}
+        same_app = bool(self._down_pid and pid.value == self._down_pid)
         if not double and self._down_hwnd and int(hwnd or 0) != self._down_hwnd:
-            log.info("selection skipped: cross-window drag")
-            return
+            if not same_app and not (
+                name.lower() in wps_suite or self._down_name.lower() in wps_suite
+            ):
+                log.info("selection skipped: cross-window drag")
+                return
         if pid.value == self.self_pid:
             # Allow selections inside the dictionary's own content area (so
             # double-clicking a result word works), but never the title bar,
@@ -610,6 +624,8 @@ class SelectionWatcher(QObject):
             log.info("selection skipped: clipboard holds files/metafile, foreground=%s", name)
             return
         delay = int(self.settings().get("selection_delay_ms", 90) or 90)
+        if name.lower() in wps_suite and delay < 220:
+            delay = 220
         time.sleep(delay / 1000.0)
         # Screenshot tools copy the bitmap right after the drag ends; re-check
         # so we never steal a freshly taken screenshot.
