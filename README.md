@@ -1,12 +1,12 @@
-# 划词词典 · Lexi Dictionary
+﻿# 划词词典 · Lexi Dictionary
 
 一个轻量、干净、**划词即查**的 Windows 中英词典。
 
 选中文字 → 出现小标志 → 点开才查；不点，它不会打扰你。
 
-![宣传片封面](docs/media/cover.png)
+![宣传片封面](docs/media/cover_v3.png)
 
-[▶ 45 秒宣传片](docs/media/lexi_promo.mp4) · [B站](https://www.bilibili.com/video/BV1iP4V6wEwc)
+[▶ 60 秒宣传片](docs/media/lexi_promo_v4.mp4) · [B站](https://www.bilibili.com/video/BV1ssW465EsA)
 
 ## 功能
 
@@ -170,4 +170,5 @@ optimise,ˈɒptɪmaɪz,使最优化,to make as effective as possible
 ## 说明
 
 这是一个个人向的轻量词典项目，不是牛津/剑桥/韦氏官方产品，也不替代它们的完整授权版本。
+
 
