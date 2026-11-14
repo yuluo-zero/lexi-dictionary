@@ -10,7 +10,7 @@ import time
 
 from PySide6.QtCore import QObject, QPoint, QThreadPool, QRunnable, QTimer, QUrl, Signal
 from PySide6.QtGui import QAction, QIcon, QPixmap
-from PySide6.QtMultimedia import QAudioOutput, QMediaPlayer
+from PySide6.QtMultimedia import QAudioOutput, QMediaDevices, QMediaPlayer
 from PySide6.QtWidgets import QApplication, QMenu, QSystemTrayIcon
 
 from . import config, online
@@ -89,6 +89,11 @@ class Application(QObject):
         self._audio = QAudioOutput(self)
         self._player.setAudioOutput(self._audio)
         self._audio.setVolume(0.9)
+        try:
+            QMediaDevices.audioOutputsChanged.connect(self._refresh_audio_device)
+        except Exception:
+            pass
+        self._refresh_audio_device()
         self._tts_signals = _TTSSignals(self)
         self._tts_signals.done.connect(self._on_tts)
         self._tts = None
@@ -695,7 +700,21 @@ class Application(QObject):
         elif self.settings.get("tts_system", True):
             self._system_speak(text)
 
+    def _refresh_audio_device(self, *args):
+        """Follow the Windows default output (headphones/USB/Bluetooth)."""
+        try:
+            dev = QMediaDevices.defaultAudioOutput()
+            if dev.isNull():
+                return
+            current = self._audio.device()
+            if current.isNull() or current.id() != dev.id():
+                self._audio.setDevice(dev)
+            log.info("tts output device %s", dev.description())
+        except Exception:
+            log.exception("refresh audio device")
+
     def _play(self, path: str):
+        self._refresh_audio_device()
         log.info("tts play %s", os.path.basename(path))
         self._player.setSource(QUrl.fromLocalFile(path))
         self._player.play()

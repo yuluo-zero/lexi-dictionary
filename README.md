@@ -1,4 +1,4 @@
-﻿# 划词词典 · Lexi Dictionary
+# 划词词典 · Lexi Dictionary
 
 一个轻量、干净、**划词即查**的 Windows 中英词典。
 
@@ -38,7 +38,7 @@ Windows 10/11 64 位，解压即用，不需要装 Python，也不需要管理�
 
 ### 便携版使用
 
-1. 下载 `lexi-dictionary-portable-v1.2.3.zip`（约 193 MB）
+1. 下载 `lexi-dictionary-portable-v1.2.4.zip`（约 193 MB）
 2. 如果 Windows 提示「已阻止此文件」或「来自网络」：
    - 先右键 ZIP → 属性 → 勾选「解除锁定」→ 再解压
    - 或解压后在 PowerShell 运行：
