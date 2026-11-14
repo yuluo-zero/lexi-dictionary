@@ -34,7 +34,19 @@
 
 Windows 10/11 64 位，解压即用，不需要装 Python，也不需要管理员权限。
 
-**[下载最新便携版 ZIP](https://github.com/yuluo-zero/lexi-dictionary/releases/latest)**
+**[下载最新版](https://github.com/yuluo-zero/lexi-dictionary/releases/latest)**
+
+- 安装版：`LexiDictionary-Setup-v1.2.4.exe`，双击安装，创建快捷方式
+- 便携版：`lexi-dictionary-portable-v1.2.4.zip`，解压后双击 `LexiDictionary.exe`
+
+### 安装版
+
+1. 下载 `LexiDictionary-Setup-v1.2.4.exe`
+2. 双击运行，按提示选择安装位置
+3. 安装完成后从开始菜单或桌面启动
+4. 数据保存在安装目录的 `data/`
+
+安装到当前用户，不需要管理员权限；卸载时保留 `data/`，避免误删生词本。
 
 ### 便携版使用
 
@@ -46,12 +58,8 @@ Windows 10/11 64 位，解压即用，不需要装 Python，也不需要管理�
      Get-ChildItem -Recurse | Unblock-File
      ```
 3. 解压到任意固定目录，例如 `D:\划词词典`
-4. 双击 `start.cmd` 启动
-   - 不想看到命令行窗口，双击 `start.vbs`
-   - 如果启动脚本仍被拦截，直接运行：
-     ```powershell
-     runtime\pythonw.exe main.py
-     ```
+4. 双击 `LexiDictionary.exe` 启动
+   - 如果被拦截，再试 `start.cmd` / `start.vbs`
 5. 数据都在解压目录：
    ```
    data/settings.json   设置
