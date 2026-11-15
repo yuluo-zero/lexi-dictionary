@@ -41,6 +41,8 @@ def classify(text: str) -> str:
         if cjk_count <= 12 and not SENTENCE_PUNCT.search(s) and " " not in s:
             return "zh"
         return "sentence"
+    if len(s.split()) >= 3 and re.search(r"[.!?。！？]$", s):
+        return "sentence"
     if re.fullmatch(r"[A-Za-z][A-Za-z'’.\- ]{0,45}", s) and len(s.split()) <= 5:
         return "en"
     return "sentence"
