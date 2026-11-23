@@ -36,12 +36,12 @@ Windows 10/11 64 位，解压即用，不需要装 Python，也不需要管理�
 
 **[下载最新版](https://github.com/yuluo-zero/lexi-dictionary/releases/latest)**
 
-- 安装版：`LexiDictionary-Setup-v1.3.0.exe`，双击安装，创建快捷方式
-- 便携版：`lexi-dictionary-portable-v1.3.0.zip`，解压后双击 `LexiDictionary.exe`
+- 安装版：`LexiDictionary-Setup-v1.3.1.exe`，双击安装，创建快捷方式
+- 便携版：`lexi-dictionary-portable-v1.3.1.zip`，解压后双击 `LexiDictionary.exe`
 
 ### 安装版
 
-1. 下载 `LexiDictionary-Setup-v1.3.0.exe`
+1. 下载 `LexiDictionary-Setup-v1.3.1.exe`
 2. 双击运行，按提示选择安装位置
 3. 安装完成后从开始菜单或桌面启动
 4. 数据保存在安装目录的 `data/`
@@ -50,7 +50,7 @@ Windows 10/11 64 位，解压即用，不需要装 Python，也不需要管理�
 
 ### 便携版使用
 
-1. 下载 `lexi-dictionary-portable-v1.3.0.zip`（约 193 MB）
+1. 下载 `lexi-dictionary-portable-v1.3.1.zip`（约 193 MB）
 2. 如果 Windows 提示「已阻止此文件」或「来自网络」：
    - 先右键 ZIP → 属性 → 勾选「解除锁定」→ 再解压
    - 或解压后在 PowerShell 运行：
@@ -180,6 +180,7 @@ optimise,ˈɒptɪmaɪz,使最优化,to make as effective as possible
 ## 说明
 
 这是一个个人向的轻量词典项目，不是牛津/剑桥/韦氏官方产品，也不替代它们的完整授权版本。
+
 
 
 

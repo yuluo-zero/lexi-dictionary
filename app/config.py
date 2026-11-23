@@ -1,4 +1,4 @@
-# -*- coding: utf-8 -*-
+﻿# -*- coding: utf-8 -*-
 """Paths, settings and small shared helpers."""
 from __future__ import annotations
 
@@ -10,7 +10,7 @@ import threading
 
 APP_NAME = "划词词典"
 APP_EN = "Lexi"
-VERSION = "1.3.0"
+VERSION = "1.3.1"
 
 _lock = threading.RLock()
 
@@ -156,3 +156,4 @@ def startup_command() -> str:
     runner = pyw if os.path.exists(pyw) else sys.executable
     main = os.path.join(app_root(), "main.py")
     return '"%s" "%s" --autostart' % (runner, main)
+

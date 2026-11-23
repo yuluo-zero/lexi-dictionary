@@ -130,6 +130,8 @@ def _parse_txt(path: str) -> list[dict]:
 
 
 def _html_text(raw: str) -> str:
+    # MDict style markers look like `12`; they are not content.
+    raw = re.sub(r"`\d+`", " ", raw)
     raw = re.sub(r"(?is)<(script|style).*?</\1>", " ", raw)
     raw = re.sub(r"(?s)<[^>]+>", " ", raw)
     raw = html.unescape(raw)
