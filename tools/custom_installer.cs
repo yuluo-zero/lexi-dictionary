@@ -306,7 +306,7 @@ namespace LexiSetup
             {
                 if (k == null) return;
                 k.SetValue("DisplayName", "划词词典");
-                k.SetValue("DisplayVersion", "1.2.5");
+                k.SetValue("DisplayVersion", "1.3.0");
                 k.SetValue("Publisher", "雨落降零度");
                 k.SetValue("InstallLocation", dir);
                 k.SetValue("DisplayIcon", Path.Combine(dir, "LexiDictionary.exe"));
@@ -317,4 +317,5 @@ namespace LexiSetup
         }
     }
 }
+
 

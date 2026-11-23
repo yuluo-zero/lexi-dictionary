@@ -1856,6 +1856,34 @@ class SettingsPage(QWidget):
         outer.addWidget(area)
         lay.addWidget(PageHeader("设置", "所有选项都会立即生效"))
 
+        # ---- 快速配置（词典分组雏形）
+        lay.addWidget(self._section_label("快速配置"))
+        preset_card = Card()
+        preset_row = QWidget()
+        pr = QHBoxLayout(preset_row)
+        pr.setContentsMargins(0, 0, 0, 0)
+        pr.setSpacing(8)
+        presets = (
+            ("阅读", {"source_ecdict": True, "source_cedict": True,
+                      "source_wordnet": False, "source_youdao": True,
+                      "source_datamuse": False}),
+            ("考试", {"source_ecdict": True, "source_cedict": True,
+                      "source_wordnet": True, "source_youdao": False,
+                      "source_datamuse": True}),
+            ("全部", {"source_ecdict": True, "source_cedict": True,
+                      "source_wordnet": True, "source_youdao": True,
+                      "source_datamuse": True}),
+        )
+        for name, flags in presets:
+            btn = QPushButton(name)
+            btn.setObjectName("chip")
+            btn.clicked.connect(lambda _=False, f=flags: self._apply_preset(f))
+            pr.addWidget(btn)
+        pr.addStretch(1)
+        preset_card.body().addWidget(SettingRow(
+            "词典模式", "一键切换常用来源组合；本地词典不受影响", preset_row))
+        lay.addWidget(preset_card)
+
         # ---- 划词
         lay.addWidget(self._section_label("划词与悬浮球"))
         card = Card()
@@ -2196,7 +2224,7 @@ class SettingsPage(QWidget):
         cr = QHBoxLayout(custom_row)
         cr.setContentsMargins(0, 0, 0, 0)
         cr.setSpacing(8)
-        import_btn = QPushButton("导入 CSV / JSON")
+        import_btn = QPushButton("导入 CSV / JSON / MDX")
         import_btn.setObjectName("primary")
         import_btn.clicked.connect(self._import_custom)
         cr.addWidget(import_btn)
@@ -2391,6 +2419,11 @@ class SettingsPage(QWidget):
         lay.addStretch(1)
 
     # ------------------------------------------------------------------ helpers
+    def _apply_preset(self, flags):
+        for key, value in flags.items():
+            self._set(key, value)
+        QTimer.singleShot(0, self.app.window.refresh_settings)
+
     def _section_label(self, text: str) -> QWidget:
         w = QWidget()
         lay = QVBoxLayout(w)
@@ -2467,7 +2500,7 @@ class SettingsPage(QWidget):
             self,
             "导入本地词典",
             "",
-            "词典文件 (*.csv *.tsv *.json *.txt);;所有文件 (*)",
+            "词典文件 (*.csv *.tsv *.json *.txt *.mdx);;所有文件 (*)",
         )
         if not path:
             return

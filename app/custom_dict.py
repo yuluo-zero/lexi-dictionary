@@ -1,15 +1,12 @@
 # -*- coding: utf-8 -*-
-"""Import user-provided local dictionaries (CSV / TSV / JSON / TXT).
-
-The data stays in the local user database.  Proprietary formats such as
-MDict (.mdx) and ABBYY Lingvo (.ld2) need their own parsers and are
-deliberately not accepted here.
-"""
+"""Import user-provided local dictionaries (CSV / TSV / JSON / TXT / MDX)."""
 from __future__ import annotations
 
 import csv
+import html
 import json
 import os
+import re
 
 _WORD_KEYS = ("word", "term", "headword", "entry", "词条", "单词")
 _TRANS_KEYS = ("translation", "meaning", "chinese", "zh", "释义", "中文", "解释")
@@ -132,17 +129,43 @@ def _parse_txt(path: str) -> list[dict]:
     return out
 
 
+def _html_text(raw: str) -> str:
+    raw = re.sub(r"(?is)<(script|style).*?</\1>", " ", raw)
+    raw = re.sub(r"(?s)<[^>]+>", " ", raw)
+    raw = html.unescape(raw)
+    return re.sub(r"\s+", " ", raw).strip()
+
+
+def _parse_mdx(path: str) -> list[dict]:
+    # readmdict is vendored next to main.py; lzo.py is a pure-Python
+    # decompressor so LZO-compressed MDX files work without python-lzo.
+    from readmdict import MDX
+
+    out = []
+    mdx = MDX(path)
+    for key, body in mdx.items():
+        word = key.decode("utf-8", "replace") if isinstance(key, bytes) else str(key)
+        text = body.decode("utf-8", "replace") if isinstance(body, bytes) else str(body)
+        text = _html_text(text)
+        item = _normalise(word, "", "", text)
+        if item:
+            out.append(item)
+    return out
+
+
 def parse_custom_dictionary(path: str) -> list[dict]:
     """Parse a user-provided dictionary file.
 
     Raises ValueError with a user-facing message for unsupported formats.
     """
     ext = os.path.splitext(path)[1].lower()
-    if ext in (".mdx", ".mdd", ".ld2", ".ldx"):
+    if ext in (".mdd", ".ld2", ".ldx"):
         raise ValueError(
-            "暂不支持 .mdx / .ld2 专有格式。\n"
-            "请先用词典软件导出为 CSV、TSV、JSON 或 TXT，再导入。"
+            "暂不支持 .mdd / .ld2 专有格式。\n"
+            "MDX 可直接导入；Lingvo 请先导出为 CSV、TSV、JSON 或 TXT。"
         )
+    if ext == ".mdx":
+        return _parse_mdx(path)
     if ext == ".csv":
         return _parse_csv(path, ",")
     if ext == ".tsv":

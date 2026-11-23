@@ -1,4 +1,4 @@
-# 划词词典 · Lexi Dictionary
+﻿# 划词词典 · Lexi Dictionary
 
 一个轻量、干净、**划词即查**的 Windows 中英词典。
 
@@ -17,7 +17,7 @@
 - **悬浮球**：快捷搜索、待复习角标、贴边收起
 - **查询历史**：可勾选删除，也可一键清空
 - **数据本地**：生词、历史、设置都在本机；支持备份 / 恢复
-- **本地自定义词典**：可导入自己的 CSV / TSV / JSON / TXT 词库，只保存在本机
+- **本地自定义词典**：可导入自己的 CSV / TSV / JSON / TXT / MDX 词库，只保存在本机
 - **来源可选**：ECDICT / WordNet / 柯林斯 / 韦氏 / 有道；支持并列对照
 
 ## 截图
@@ -36,12 +36,12 @@ Windows 10/11 64 位，解压即用，不需要装 Python，也不需要管理�
 
 **[下载最新版](https://github.com/yuluo-zero/lexi-dictionary/releases/latest)**
 
-- 安装版：`LexiDictionary-Setup-v1.2.5.exe`，双击安装，创建快捷方式
-- 便携版：`lexi-dictionary-portable-v1.2.5.zip`，解压后双击 `LexiDictionary.exe`
+- 安装版：`LexiDictionary-Setup-v1.3.0.exe`，双击安装，创建快捷方式
+- 便携版：`lexi-dictionary-portable-v1.3.0.zip`，解压后双击 `LexiDictionary.exe`
 
 ### 安装版
 
-1. 下载 `LexiDictionary-Setup-v1.2.5.exe`
+1. 下载 `LexiDictionary-Setup-v1.3.0.exe`
 2. 双击运行，按提示选择安装位置
 3. 安装完成后从开始菜单或桌面启动
 4. 数据保存在安装目录的 `data/`
@@ -50,7 +50,7 @@ Windows 10/11 64 位，解压即用，不需要装 Python，也不需要管理�
 
 ### 便携版使用
 
-1. 下载 `lexi-dictionary-portable-v1.2.5.zip`（约 193 MB）
+1. 下载 `lexi-dictionary-portable-v1.3.0.zip`（约 193 MB）
 2. 如果 Windows 提示「已阻止此文件」或「来自网络」：
    - 先右键 ZIP → 属性 → 勾选「解除锁定」→ 再解压
    - 或解压后在 PowerShell 运行：
@@ -118,7 +118,7 @@ data/dict/wordnet.db
 
 可以把自己有权使用的词库导入本机：
 
-**设置 → 本地词典 → 导入 CSV / JSON**
+**设置 → 本地词典 → 导入 CSV / JSON / MDX**
 
 支持：
 
@@ -126,6 +126,7 @@ data/dict/wordnet.db
 - TSV：同上，用 Tab 分隔
 - JSON：对象数组，或 `{"word": "释义"}`
 - TXT：`word<Tab>phonetic<Tab>translation<Tab>definition`
+- MDX：读取词条文本，HTML 会清洗成纯文本；暂不支持 `.mdd` 图片/音频
 
 示例：
 
@@ -139,7 +140,8 @@ optimise,ˈɒptɪmaɪz,使最优化,to make as effective as possible
 - 只保存在本机 `data/user.db`
 - 不会上传 GitHub、B站或便携包
 - 不上传到任何在线服务
-- `.mdx` / `.ld2` 是专有格式，需要先在词典软件里导出为 CSV/TSV/JSON/TXT
+- `.mdd` / `.ld2` 暂不支持；Lingvo 请先导出为 CSV/TSV/JSON/TXT
+- MDX 的复杂 CSS、图片、音频和词条内跳转暂不完整支持
 - 请确认你对该词库有本地使用和转换权限；商业词典不要随应用分发
 
 ## 在线词典 / API Key
@@ -178,5 +180,6 @@ optimise,ˈɒptɪmaɪz,使最优化,to make as effective as possible
 ## 说明
 
 这是一个个人向的轻量词典项目，不是牛津/剑桥/韦氏官方产品，也不替代它们的完整授权版本。
+
 
 

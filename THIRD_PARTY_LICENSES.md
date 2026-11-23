@@ -15,6 +15,8 @@
 | PySide6 / Qt | LGPL-3.0 | `LICENSES/LGPL-3.0.txt`、`LICENSES/PYSIDE6-QT-NOTICE.txt` |
 | Python 运行时 | PSF License | `LICENSES/PYTHON-PSF.txt` |
 | FSRS (py-fsrs) | MIT | `LICENSES/FSRS-MIT.txt` |
+| readmdict | MIT | `LICENSES/READMDICT-MIT.txt` |
+| LZO decompressor | MIT | `LICENSES/READMDICT-MIT.txt` |
 
 ## ECDICT
 
@@ -61,6 +63,14 @@
 - 项目：https://github.com/open-spaced-repetition/py-fsrs
 - 许可证：MIT
 - 完整文本：`LICENSES/FSRS-MIT.txt`
+
+## readmdict / LZO
+
+- 项目：https://github.com/ffreemt/readmdict
+- 许可证：MIT
+- 用途：读取用户导入的 MDict `.mdx` 文件
+- 说明：`lzo.py` 是基于 Dissect 的纯 Python LZO 解压实现，避免依赖 `python-lzo` 原生扩展
+- 完整文本：`LICENSES/READMDICT-MIT.txt`
 
 ## 在线词典服务
 
